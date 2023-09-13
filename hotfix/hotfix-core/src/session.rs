@@ -4,6 +4,7 @@ use crate::tls_client::{Client, FixStream};
 use tokio::io::{AsyncReadExt, AsyncWriteExt, ReadHalf, WriteHalf};
 use tokio::select;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
+use tracing::{debug, info};
 
 pub struct Message {
     is_logon: bool,
@@ -31,12 +32,6 @@ impl Session {
     }
 }
 
-impl Drop for Session {
-    fn drop(&mut self) {
-        println!("dropping session");
-    }
-}
-
 async fn establish_connection(config: SessionConfig, recv: UnboundedReceiver<Message>) {
     let tls_client = Client::new(&config).await;
     let (reader, writer) = tls_client.split();
@@ -46,10 +41,10 @@ async fn establish_connection(config: SessionConfig, recv: UnboundedReceiver<Mes
 
     select! {
         () = fut_writer => {
-            println!("writer loop closed")
+            info!("writer loop closed")
         }
         () = fut_reader => {
-            println!("reader loop closed")
+            info!("reader loop closed")
         }
     }
 }
@@ -67,12 +62,12 @@ async fn writer_loop(
                 .write_all(&login_message)
                 .await
                 .expect("logon message to send");
-            println!("sent logon message");
+            debug!("sent logon message");
         } else {
-            println!("received non-logon message");
+            debug!("received non-logon message");
         }
     }
-    println!("writer received None, closing the task");
+    debug!("writer received None, closing the task");
 }
 
 async fn reader_loop(mut reader: ReadHalf<FixStream>) {
@@ -81,6 +76,6 @@ async fn reader_loop(mut reader: ReadHalf<FixStream>) {
         reader.read_buf(&mut buf).await.unwrap();
 
         let msg = String::from_utf8(buf).unwrap();
-        println!("received message: {}", msg);
+        debug!("received message: {}", msg);
     }
 }
