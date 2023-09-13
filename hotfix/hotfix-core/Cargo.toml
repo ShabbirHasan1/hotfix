@@ -1,0 +1,17 @@
+[package]
+name = "hotfix-core"
+version = "0.1.0"
+edition = "2021"
+authors = ["David Steiner <david_j_steiner@yahoo.co.nz>"]
+
+[dependencies]
+fefix = "^0.7.0"
+futures = "^0.3.28"
+pki-types = { package = "rustls-pki-types", version = "^0.2" }
+rustls = "^0.21.5"
+rustls-pemfile = "=2.0.0-alpha.1"
+serde = { version = "^1.0.177", features = ["derive"] }
+tokio = { version = "^1", features = ["full"] }
+tokio-rustls = "^0.24.1"
+tokio-stream = "^0.1.14"
+toml = "^0.7.6"
