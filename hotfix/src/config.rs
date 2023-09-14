@@ -42,6 +42,7 @@ data_dictionary_path = "./spec/FIX44.xml"
 connection_port = 443
 connection_host = "127.0.0.1"
 ca_certificate_path = "my_cert.crt"
+heartbeat_interval = 30
         "#;
 
         let config: Config = toml::from_str(config_contents).unwrap();
@@ -55,5 +56,6 @@ ca_certificate_path = "my_cert.crt"
         assert_eq!(session_config.connection_port, 443);
         assert_eq!(session_config.connection_host, "127.0.0.1");
         assert_eq!(session_config.ca_certificate_path, "my_cert.crt");
+        assert_eq!(session_config.heartbeat_interval, 30);
     }
 }
