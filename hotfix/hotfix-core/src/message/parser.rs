@@ -1,5 +1,55 @@
 //! HeaderInfo taken from ferrumfix
+use fefix::tagvalue::{Config, Decoder};
+use fefix::Dictionary;
+use std::io::Read;
 use std::ops::Range;
+
+const FIELD_CHECKSUM_LEN_IN_BYTES: usize = 7; // the checksum is always 7 bytes
+
+#[derive(Clone, Debug)]
+pub struct RawFixMessage {
+    data: Vec<u8>,
+}
+
+struct Parser {
+    buffer: Vec<u8>,
+    decoder: Decoder<Config>,
+}
+
+impl Parser {
+    fn parse(&mut self, data: &[u8]) -> Vec<RawFixMessage> {
+        let mut messages = vec![];
+        self.buffer.extend_from_slice(data);
+        while let Some(header_info) = HeaderInfo::parse(&self.buffer, b'\x01') {
+            let message_length = header_info.message_length();
+            if message_length > self.buffer.len() {
+                break;
+            }
+
+            let (msg_data, remainder) = self.buffer.split_at(message_length + 1);
+            let msg = self.decoder.decode(msg_data).expect("valid message");
+
+            let raw_message = RawFixMessage {
+                data: msg.as_bytes().to_vec(),
+            };
+            messages.push(raw_message);
+
+            self.buffer = remainder.to_vec();
+        }
+
+        messages
+    }
+}
+
+impl Default for Parser {
+    fn default() -> Self {
+        let decoder = Decoder::new(Dictionary::fix44());
+        Self {
+            buffer: vec![],
+            decoder,
+        }
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct HeaderInfo {
@@ -42,14 +92,51 @@ impl HeaderInfo {
     }
 
     #[inline]
-    fn nominal_body_length(&self) -> usize {
-        self.nominal_body_len
+    fn message_length(&self) -> usize {
+        self.field_1.end + self.nominal_body_len + FIELD_CHECKSUM_LEN_IN_BYTES
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::message::parser::HeaderInfo;
+    use crate::message::parser::{HeaderInfo, Parser};
+
+    #[test]
+    fn test_parsing_exact_message() {
+        let data = b"8=FIX.4.4\x019=77\x0135=A\x0134=1\x0149=validus-fix\x0152=20230908-08:24:56.574\x0156=FXALL\x0198=0\x01108=30\x01141=Y\x0110=037\x01";
+        let mut parser = Parser::default();
+
+        let messages = parser.parse(data);
+        assert_eq!(messages.len(), 1);
+        assert_eq!(parser.buffer.len(), 0);
+    }
+
+    #[test]
+    fn test_parsing_incomplete_message() {
+        let data = b"8=FIX.4.4\x019=77\x0135=A\x0134=1\x0149=validus-fix\x0152=20230908-08:24:56.574\x0156=FXALL\x0198=0\x01108=30\x01141=Y";
+        let mut parser = Parser::default();
+
+        let messages = parser.parse(data);
+        assert_eq!(messages.len(), 0);
+        assert_eq!(parser.buffer.len(), data.len());
+    }
+
+    #[test]
+    fn test_parsing_incomplete_message_then_completing() {
+        // this isn't a complete message
+        let data1 = b"8=FIX.4.4\x019=77\x0135=A\x0134=1\x0149=validus-fix\x0152=20230908-08:24:56.574\x0156=FXALL\x0198=0\x01108=30\x0114";
+        // this contains the end of the previous message, plus a full new message
+        let data2 = b"1=Y\x0110=037\x018=FIX.4.4\x019=77\x0135=A\x0134=2\x0149=validus-fix\x0152=20230908-08:24:58.574\x0156=FXALL\x0198=0\x01108=30\x01141=Y\x0110=040\x01";
+        let mut parser = Parser::default();
+
+        let messages = parser.parse(data1);
+        assert_eq!(messages.len(), 0);
+        assert_eq!(parser.buffer.len(), data1.len());
+
+        let messages = parser.parse(data2);
+        assert_eq!(messages.len(), 2);
+        assert_eq!(parser.buffer.len(), 0);
+    }
 
     #[test]
     fn test_incomplete_header_info() {
@@ -65,7 +152,7 @@ mod tests {
         let result = HeaderInfo::parse(data, b'\x01');
 
         assert!(result.is_some());
-        assert_eq!(result.unwrap().nominal_body_length(), 77);
+        assert_eq!(result.unwrap().nominal_body_len, 77);
     }
 
     #[test]
@@ -74,6 +161,6 @@ mod tests {
         let result = HeaderInfo::parse(data, b'\x01');
 
         assert!(result.is_some());
-        assert_eq!(result.unwrap().nominal_body_length(), 77);
+        assert_eq!(result.unwrap().nominal_body_len, 77);
     }
 }
