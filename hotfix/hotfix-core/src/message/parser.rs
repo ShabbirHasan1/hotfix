@@ -1,7 +1,7 @@
 //! HeaderInfo taken from ferrumfix
 use fefix::tagvalue::{Config, Decoder};
 use fefix::Dictionary;
-use std::io::Read;
+use std::fmt::{Display, Formatter};
 use std::ops::Range;
 
 const FIELD_CHECKSUM_LEN_IN_BYTES: usize = 7; // the checksum is always 7 bytes
@@ -11,13 +11,26 @@ pub struct RawFixMessage {
     data: Vec<u8>,
 }
 
-struct Parser {
+impl Display for RawFixMessage {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        let pretty_bytes: Vec<u8> = self
+            .data
+            .iter()
+            .map(|b| if *b == b'\x01' { b'|' } else { *b })
+            .collect();
+        let s = std::str::from_utf8(&pretty_bytes).unwrap_or("invalid characters");
+
+        write!(f, "{}", s)
+    }
+}
+
+pub struct Parser {
     buffer: Vec<u8>,
     decoder: Decoder<Config>,
 }
 
 impl Parser {
-    fn parse(&mut self, data: &[u8]) -> Vec<RawFixMessage> {
+    pub fn parse(&mut self, data: &[u8]) -> Vec<RawFixMessage> {
         let mut messages = vec![];
         self.buffer.extend_from_slice(data);
         while let Some(header_info) = HeaderInfo::parse(&self.buffer, b'\x01') {

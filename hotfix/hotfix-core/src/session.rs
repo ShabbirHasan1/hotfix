@@ -1,5 +1,6 @@
 use crate::config::SessionConfig;
 use crate::message::logon;
+use crate::message::parser::Parser;
 use crate::tls_client::{Client, FixStream};
 use tokio::io::{AsyncReadExt, AsyncWriteExt, ReadHalf, WriteHalf};
 use tokio::select;
@@ -71,11 +72,14 @@ async fn writer_loop(
 }
 
 async fn reader_loop(mut reader: ReadHalf<FixStream>) {
+    let mut parser = Parser::default();
     loop {
         let mut buf = vec![];
         reader.read_buf(&mut buf).await.unwrap();
+        let messages = parser.parse(&buf);
 
-        let msg = String::from_utf8(buf).unwrap();
-        debug!("received message: {}", msg);
+        for msg in messages {
+            debug!("received message: {}", msg);
+        }
     }
 }
