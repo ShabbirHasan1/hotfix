@@ -11,6 +11,16 @@ pub struct RawFixMessage {
     data: Vec<u8>,
 }
 
+impl RawFixMessage {
+    pub fn new(data: Vec<u8>) -> Self {
+        Self { data }
+    }
+
+    pub fn as_bytes(&self) -> &[u8] {
+        &self.data
+    }
+}
+
 impl Display for RawFixMessage {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let pretty_bytes: Vec<u8> = self
