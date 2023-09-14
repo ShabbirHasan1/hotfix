@@ -5,6 +5,7 @@ on:
       - main
     paths:
       - "Cargo.toml"
+      - "hotfix/Cargo.toml"
       - ".github/workflows/release.yml"
 
 jobs:
