@@ -1,85 +1,38 @@
+use crate::actors::orchestrator::OrchestratorHandle;
+use crate::actors::socket_reader::reader_loop;
+use crate::actors::socket_writer::WriterHandle;
 use crate::config::SessionConfig;
 use crate::message::logon;
-use crate::message::parser::Parser;
-use crate::tls_client::{Client, FixStream};
-use tokio::io::{AsyncReadExt, AsyncWriteExt, ReadHalf, WriteHalf};
-use tokio::select;
-use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
-use tracing::{debug, info};
-
-pub struct Message {
-    is_logon: bool,
-}
+use crate::message::parser::RawFixMessage;
+use crate::tls_client::Client;
 
 pub struct Session {
     pub config: SessionConfig,
-    pub sender: UnboundedSender<Message>,
 }
 
 impl Session {
     pub fn new(config: SessionConfig) -> Self {
-        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
-
         let spawned_config = config.clone();
         tokio::spawn(async move {
-            establish_connection(spawned_config, rx).await;
+            establish_connection(spawned_config).await;
         });
-        tx.send(Message { is_logon: true }).unwrap();
-        Self { config, sender: tx }
-    }
-
-    pub async fn send_message(&self, msg: Message) {
-        self.sender.send(msg).unwrap();
+        Self { config }
     }
 }
 
-async fn establish_connection(config: SessionConfig, recv: UnboundedReceiver<Message>) {
+async fn establish_connection(config: SessionConfig) {
     let tls_client = Client::new(&config).await;
+
     let (reader, writer) = tls_client.split();
+    let logon_message = logon::create_login_message(&config.sender_comp_id, &config.target_comp_id);
 
-    let fut_writer = writer_loop(config, writer, recv);
-    let fut_reader = reader_loop(reader);
+    let writer = WriterHandle::new(writer);
+    let orchestrator = OrchestratorHandle::new();
+    let fut_reader = reader_loop(reader, orchestrator);
 
-    select! {
-        () = fut_writer => {
-            info!("writer loop closed")
-        }
-        () = fut_reader => {
-            info!("reader loop closed")
-        }
-    }
-}
+    writer
+        .send_raw_message(RawFixMessage::new(logon_message))
+        .await;
 
-async fn writer_loop(
-    config: SessionConfig,
-    mut writer: WriteHalf<FixStream>,
-    mut message_channel: UnboundedReceiver<Message>,
-) {
-    while let Some(msg) = message_channel.recv().await {
-        if msg.is_logon {
-            let login_message =
-                logon::create_login_message(&config.sender_comp_id, &config.target_comp_id);
-            writer
-                .write_all(&login_message)
-                .await
-                .expect("logon message to send");
-            debug!("sent logon message");
-        } else {
-            debug!("received non-logon message");
-        }
-    }
-    debug!("writer received None, closing the task");
-}
-
-async fn reader_loop(mut reader: ReadHalf<FixStream>) {
-    let mut parser = Parser::default();
-    loop {
-        let mut buf = vec![];
-        reader.read_buf(&mut buf).await.unwrap();
-        let messages = parser.parse(&buf);
-
-        for msg in messages {
-            debug!("received message: {}", msg);
-        }
-    }
+    fut_reader.await;
 }
