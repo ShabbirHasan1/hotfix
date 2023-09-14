@@ -645,7 +645,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "hotfix-core"
+name = "hotfix"
 version = "0.0.1"
 dependencies = [
  "fefix",

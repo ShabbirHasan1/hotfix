@@ -1,8 +1,12 @@
 [package]
-name = "hotfix-core"
+name = "hotfix"
 version = "0.0.1"
-edition = "2021"
 authors = ["David Steiner <david_j_steiner@yahoo.co.nz>"]
+edition = "2021"
+license = "MIT"
+description = "An experimental FIX engine"
+keywords = []
+readme = "../README.md"
 
 [dependencies]
 fefix = "^0.7.0"
