@@ -23,6 +23,7 @@ pub struct SessionConfig {
     pub ca_certificate_path: String,
     pub connection_host: String,
     pub connection_port: u16,
+    pub heartbeat_interval: u64, // in seconds
 }
 
 #[cfg(test)]
