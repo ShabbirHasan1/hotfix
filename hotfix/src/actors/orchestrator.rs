@@ -39,6 +39,16 @@ impl OrchestratorHandle {
     }
 }
 
+struct HandleOutput {
+    reset_heartbeat: bool,
+}
+
+impl HandleOutput {
+    fn new(reset_heartbeat: bool) -> Self {
+        Self { reset_heartbeat }
+    }
+}
+
 struct OrchestratorActor {
     mailbox: mpsc::Receiver<OrchestratorMessage>,
     config: SessionConfig,
@@ -65,7 +75,7 @@ impl OrchestratorActor {
         self.msg_seq_number
     }
 
-    async fn handle(&mut self, message: OrchestratorMessage) {
+    async fn handle(&mut self, message: OrchestratorMessage) -> HandleOutput {
         match message {
             OrchestratorMessage::FixMessageReceived(fix_message) => {
                 debug!("received message: {}", fix_message);
@@ -78,6 +88,7 @@ impl OrchestratorActor {
                     seq_num,
                 );
                 self.writer.send_raw_message(RawFixMessage::new(msg)).await;
+                return HandleOutput::new(true);
             }
             OrchestratorMessage::SendLogon => {
                 let seq_num = self.next_sequence_number();
@@ -87,8 +98,11 @@ impl OrchestratorActor {
                     seq_num,
                 );
                 self.writer.send_raw_message(RawFixMessage::new(msg)).await;
+                return HandleOutput::new(true);
             }
         }
+
+        HandleOutput::new(false)
     }
 }
 
@@ -101,19 +115,24 @@ async fn run_orchestrator(mut actor: OrchestratorActor) {
             tokio::time::sleep(Duration::from_secs(actor.config.heartbeat_interval));
         tokio::pin!(next_heartbeat);
 
-        select! {
+        let outcome = select! {
             next = next_message => {
                 match next {
                     Some(msg) => {
-                        actor.handle(msg).await;
+                        actor.handle(msg).await
                     }
                     None => break,
                 }
             }
             () = &mut next_heartbeat => {
-                next_heartbeat.as_mut().reset(Instant::now() + Duration::from_secs(actor.config.heartbeat_interval));
-                actor.handle(OrchestratorMessage::SendHeartbeat).await;
+                actor.handle(OrchestratorMessage::SendHeartbeat).await
             }
+        };
+
+        if outcome.reset_heartbeat {
+            next_heartbeat
+                .as_mut()
+                .reset(Instant::now() + Duration::from_secs(actor.config.heartbeat_interval));
         }
     }
 }
