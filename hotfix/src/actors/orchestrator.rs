@@ -6,6 +6,7 @@ use tracing::debug;
 
 use crate::actors::socket_writer::WriterHandle;
 use crate::config::SessionConfig;
+use crate::message::hardcoded::FixMessage;
 use crate::message::heartbeat::heartbeat_message;
 use crate::message::logon::logon_message;
 use crate::message::parser::RawFixMessage;
@@ -15,6 +16,7 @@ pub enum OrchestratorMessage {
     FixMessageReceived(RawFixMessage),
     SendHeartbeat,
     SendLogon,
+    SendMessage(FixMessage),
 }
 
 #[derive(Clone)]
@@ -36,6 +38,13 @@ impl OrchestratorHandle {
             .send(OrchestratorMessage::FixMessageReceived(msg))
             .await
             .expect("be able to receive message");
+    }
+
+    pub async fn send_message(&self, msg: FixMessage) {
+        self.sender
+            .send(OrchestratorMessage::SendMessage(msg))
+            .await
+            .expect("message to send successfully");
     }
 }
 
@@ -99,6 +108,9 @@ impl OrchestratorActor {
                 );
                 self.writer.send_raw_message(RawFixMessage::new(msg)).await;
                 return HandleOutput::new(true);
+            }
+            OrchestratorMessage::SendMessage(msg) => {
+                debug!("sending message from app: {:?}", msg);
             }
         }
 
