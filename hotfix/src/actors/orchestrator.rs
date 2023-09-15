@@ -5,7 +5,9 @@ use tokio::time::Instant;
 use tracing::debug;
 
 use crate::actors::socket_writer::WriterHandle;
+use crate::builtin_messages::generate_message;
 use crate::config::SessionConfig;
+use crate::message::hardcoded::FixMessage;
 use crate::message::heartbeat::heartbeat_message;
 use crate::message::logon::logon_message;
 use crate::message::parser::RawFixMessage;
@@ -15,6 +17,7 @@ pub enum OrchestratorMessage {
     FixMessageReceived(RawFixMessage),
     SendHeartbeat,
     SendLogon,
+    SendMessage(FixMessage),
 }
 
 #[derive(Clone)]
@@ -36,6 +39,13 @@ impl OrchestratorHandle {
             .send(OrchestratorMessage::FixMessageReceived(msg))
             .await
             .expect("be able to receive message");
+    }
+
+    pub async fn send_message(&self, msg: FixMessage) {
+        self.sender
+            .send(OrchestratorMessage::SendMessage(msg))
+            .await
+            .expect("message to send successfully");
     }
 }
 
@@ -98,6 +108,19 @@ impl OrchestratorActor {
                     seq_num,
                 );
                 self.writer.send_raw_message(RawFixMessage::new(msg)).await;
+                return HandleOutput::new(true);
+            }
+            OrchestratorMessage::SendMessage(msg) => {
+                let seq_num = self.next_sequence_number();
+                let raw_message = generate_message(
+                    &self.config.sender_comp_id,
+                    &self.config.target_comp_id,
+                    seq_num,
+                    msg,
+                );
+                self.writer
+                    .send_raw_message(RawFixMessage::new(raw_message))
+                    .await;
                 return HandleOutput::new(true);
             }
         }
