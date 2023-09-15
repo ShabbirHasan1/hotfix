@@ -5,6 +5,7 @@ use tokio::time::Instant;
 use tracing::debug;
 
 use crate::actors::socket_writer::WriterHandle;
+use crate::builtin_messages::generate_message;
 use crate::config::SessionConfig;
 use crate::message::hardcoded::FixMessage;
 use crate::message::heartbeat::heartbeat_message;
@@ -110,7 +111,17 @@ impl OrchestratorActor {
                 return HandleOutput::new(true);
             }
             OrchestratorMessage::SendMessage(msg) => {
-                debug!("sending message from app: {:?}", msg);
+                let seq_num = self.next_sequence_number();
+                let raw_message = generate_message(
+                    &self.config.sender_comp_id,
+                    &self.config.target_comp_id,
+                    seq_num,
+                    msg,
+                );
+                self.writer
+                    .send_raw_message(RawFixMessage::new(raw_message))
+                    .await;
+                return HandleOutput::new(true);
             }
         }
 

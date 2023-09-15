@@ -1,4 +1,5 @@
 use crate::config::{Config, SessionConfig};
+use crate::message::hardcoded::FixMessage;
 use crate::session::Session;
 use futures::future::join_all;
 
@@ -19,6 +20,16 @@ impl SocketInitiator {
 
     async fn create_session(config: SessionConfig) -> Session {
         Session::new(config).await
+    }
+
+    pub async fn send_message(&self, sender_comp_id: &str, target_comp_id: &str, msg: FixMessage) {
+        let fut: Vec<_> = self
+            .sessions
+            .iter()
+            .filter(|s| s.is_interested(sender_comp_id, target_comp_id))
+            .map(|s| s.send_message(msg.clone()))
+            .collect();
+        join_all(fut).await;
     }
 
     pub fn get_number_of_sessions(&self) -> usize {

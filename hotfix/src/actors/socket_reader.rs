@@ -9,6 +9,9 @@ use crate::tls_client::FixStream;
 pub struct ReaderMessage;
 
 pub struct ReaderHandle {
+    // not sure we'll need to send messages to the reader,
+    // but we're keeping the standard actor structure for now
+    #[allow(dead_code)]
     sender: mpsc::Sender<ReaderMessage>,
 }
 
@@ -24,6 +27,7 @@ impl ReaderHandle {
 
 struct ReaderActor {
     reader: ReadHalf<FixStream>,
+    #[allow(dead_code)]
     mailbox: mpsc::Receiver<ReaderMessage>,
     orchestrator: OrchestratorHandle,
 }

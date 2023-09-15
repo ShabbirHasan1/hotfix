@@ -3,8 +3,8 @@
 //! FIX 4.4 spec.
 //!
 use crate::message::common::create_tag;
-use fefix::fix_values::{Date, Timestamp};
-use fefix::tagvalue::EncoderHandle;
+pub use fefix::fix_values::{Date, Timestamp};
+use fefix::tagvalue::{Config, Encoder, EncoderHandle};
 
 #[derive(Debug, Clone)]
 pub enum Side {
@@ -34,8 +34,10 @@ pub enum FixMessage {
     NewOrderSingle(NewOrderSingle),
 }
 
-trait IntoRawMessage {
+pub trait IntoRawMessage {
     fn write(&self, msg: &mut EncoderHandle<Vec<u8>>);
+
+    fn message_type(&self) -> &[u8];
 }
 
 impl IntoRawMessage for FixMessage {
@@ -63,4 +65,29 @@ impl IntoRawMessage for FixMessage {
             }
         }
     }
+
+    fn message_type(&self) -> &[u8] {
+        match self {
+            FixMessage::NewOrderSingle(_) => b"D",
+        }
+    }
+}
+
+pub(crate) fn generate_message(
+    sender_comp_id: &str,
+    target_comp_id: &str,
+    msg_seq_num: usize,
+    message: impl IntoRawMessage,
+) -> Vec<u8> {
+    let mut buffer = Vec::new();
+    let mut encoder: Encoder<Config> = Encoder::default();
+    let mut msg = encoder.start_message(b"FIX.4.4", &mut buffer, message.message_type());
+    msg.set_any(create_tag(49), sender_comp_id.as_bytes()); // sender comp id
+    msg.set_any(create_tag(56), target_comp_id.as_bytes()); // target comp id
+    msg.set_any(create_tag(34), msg_seq_num); // msg sequence number
+    msg.set_any(create_tag(52), Timestamp::utc_now()); // sending time
+
+    message.write(&mut msg);
+
+    msg.wrap().to_vec()
 }

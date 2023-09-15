@@ -28,8 +28,9 @@ impl Session {
 }
 
 struct FixConnection {
-    writer: WriterHandle,
-    reader: ReaderHandle,
+    // we hold on to the writer and reader so they're not dropped prematurely
+    _writer: WriterHandle,
+    _reader: ReaderHandle,
     orchestrator: OrchestratorHandle,
 }
 
@@ -43,8 +44,8 @@ async fn establish_connection(config: SessionConfig) -> FixConnection {
     let reader_handle = ReaderHandle::new(reader, orchestrator_handle.clone());
 
     FixConnection {
-        writer: writer_handle,
-        reader: reader_handle,
+        _writer: writer_handle,
+        _reader: reader_handle,
         orchestrator: orchestrator_handle,
     }
 }
