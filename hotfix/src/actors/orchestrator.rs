@@ -1,7 +1,6 @@
-use std::time::Duration;
 use tokio::select;
 use tokio::sync::mpsc;
-use tokio::time::Instant;
+use tokio::time::{sleep, Duration, Instant};
 use tracing::debug;
 
 use crate::actors::socket_writer::WriterHandle;
@@ -131,12 +130,11 @@ impl OrchestratorActor {
 
 async fn run_orchestrator(mut actor: OrchestratorActor) {
     actor.handle(OrchestratorMessage::SendLogon).await;
+    let next_heartbeat = sleep(Duration::from_secs(actor.config.heartbeat_interval));
+    tokio::pin!(next_heartbeat);
 
     loop {
         let next_message = actor.mailbox.recv();
-        let next_heartbeat =
-            tokio::time::sleep(Duration::from_secs(actor.config.heartbeat_interval));
-        tokio::pin!(next_heartbeat);
 
         let outcome = select! {
             next = next_message => {
@@ -153,9 +151,8 @@ async fn run_orchestrator(mut actor: OrchestratorActor) {
         };
 
         if outcome.reset_heartbeat {
-            next_heartbeat
-                .as_mut()
-                .reset(Instant::now() + Duration::from_secs(actor.config.heartbeat_interval));
+            let deadline = Instant::now() + Duration::from_secs(actor.config.heartbeat_interval);
+            next_heartbeat.as_mut().reset(deadline);
         }
     }
 }
