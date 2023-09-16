@@ -2,15 +2,9 @@
 //! but for now we hard-code the ones we need from the
 //! FIX 4.4 spec.
 //!
-use crate::message::common::create_tag;
+use fefix::definitions::fix44;
 pub use fefix::fix_values::{Date, Timestamp};
-use fefix::tagvalue::{Config, Encoder, EncoderHandle};
-
-#[derive(Debug, Clone)]
-pub enum Side {
-    Buy,
-    Sell,
-}
+use fefix::tagvalue::{Config, Encoder, EncoderHandle, FvWrite};
 
 #[derive(Debug, Clone)]
 pub struct NewOrderSingle {
@@ -18,7 +12,7 @@ pub struct NewOrderSingle {
     pub transact_time: Timestamp,
     pub symbol: String,    // CCY1/CCY2 as string
     pub cl_ord_id: String, // unique order ID assigned by the customer
-    pub side: Side,
+    pub side: fix44::Side,
     pub order_qty: u32,
     pub settlement_date: Date,
     pub currency: String, // the dealt currency
@@ -45,23 +39,18 @@ impl IntoRawMessage for FixMessage {
         match self {
             FixMessage::NewOrderSingle(order) => {
                 // order details
-                msg.set_any(create_tag(60), order.transact_time.clone());
-                msg.set_any(create_tag(55), order.symbol.as_bytes());
-                msg.set_any(create_tag(11), order.cl_ord_id.as_bytes());
-                msg.set_any(create_tag(11), order.cl_ord_id.as_bytes());
-                let side = match order.side {
-                    Side::Buy => "1",
-                    Side::Sell => "2",
-                };
-                msg.set_any(create_tag(54), side);
-                msg.set_any(create_tag(38), order.order_qty);
-                msg.set_any(create_tag(64), order.settlement_date);
-                msg.set_any(create_tag(15), order.currency.as_bytes());
+                msg.set_fv(fix44::TRANSACT_TIME, order.transact_time.clone());
+                msg.set_fv(fix44::SYMBOL, order.symbol.as_str());
+                msg.set_fv(fix44::CL_ORD_ID, order.cl_ord_id.as_str());
+                msg.set_fv(fix44::SIDE, order.side);
+                msg.set_fv(fix44::ORDER_QTY, order.order_qty);
+                msg.set_fv(fix44::SETTL_DATE, order.settlement_date);
+                msg.set_fv(fix44::CURRENCY, order.currency.as_str());
 
                 // allocations
-                msg.set_any(create_tag(78), order.number_of_allocations);
-                msg.set_any(create_tag(79), order.allocation_account.as_bytes());
-                msg.set_any(create_tag(80), order.allocation_quantity);
+                msg.set_fv(fix44::NO_ALLOCS, order.number_of_allocations);
+                msg.set_fv(fix44::ALLOC_ACCOUNT, order.allocation_account.as_str());
+                msg.set_fv(fix44::ALLOC_QTY, order.allocation_quantity);
             }
         }
     }
@@ -82,10 +71,10 @@ pub(crate) fn generate_message(
     let mut buffer = Vec::new();
     let mut encoder: Encoder<Config> = Encoder::default();
     let mut msg = encoder.start_message(b"FIX.4.4", &mut buffer, message.message_type());
-    msg.set_any(create_tag(49), sender_comp_id.as_bytes()); // sender comp id
-    msg.set_any(create_tag(56), target_comp_id.as_bytes()); // target comp id
-    msg.set_any(create_tag(34), msg_seq_num); // msg sequence number
-    msg.set_any(create_tag(52), Timestamp::utc_now()); // sending time
+    msg.set_fv(fix44::SENDER_COMP_ID, sender_comp_id);
+    msg.set_fv(fix44::TARGET_COMP_ID, target_comp_id.as_bytes());
+    msg.set_fv(fix44::MSG_SEQ_NUM, msg_seq_num);
+    msg.set_fv(fix44::SENDING_TIME, Timestamp::utc_now());
 
     message.write(&mut msg);
 
