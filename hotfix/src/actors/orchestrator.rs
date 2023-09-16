@@ -7,8 +7,8 @@ use crate::actors::socket_writer::WriterHandle;
 use crate::builtin_messages::generate_message;
 use crate::config::SessionConfig;
 use crate::message::hardcoded::FixMessage;
-use crate::message::heartbeat::heartbeat_message;
-use crate::message::logon::logon_message;
+use crate::message::heartbeat::Heartbeat;
+use crate::message::logon::Logon;
 use crate::message::parser::RawFixMessage;
 
 #[derive(Clone, Debug)]
@@ -91,20 +91,23 @@ impl OrchestratorActor {
             }
             OrchestratorMessage::SendHeartbeat => {
                 let seq_num = self.next_sequence_number();
-                let msg = heartbeat_message(
+                let msg = generate_message(
                     &self.config.sender_comp_id,
                     &self.config.target_comp_id,
                     seq_num,
+                    Heartbeat {},
                 );
                 self.writer.send_raw_message(RawFixMessage::new(msg)).await;
                 return HandleOutput::new(true);
             }
             OrchestratorMessage::SendLogon => {
                 let seq_num = self.next_sequence_number();
-                let msg = logon_message(
+                let logon = Logon::new(self.config.heartbeat_interval);
+                let msg = generate_message(
                     &self.config.sender_comp_id,
                     &self.config.target_comp_id,
                     seq_num,
+                    logon,
                 );
                 self.writer.send_raw_message(RawFixMessage::new(msg)).await;
                 return HandleOutput::new(true);
