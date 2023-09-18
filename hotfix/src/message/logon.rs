@@ -1,7 +1,7 @@
 use fefix::definitions::fix44;
 use fefix::tagvalue::{EncoderHandle, FvWrite};
 
-use crate::builtin_messages::FixMessage;
+use crate::message::FixMessage;
 
 #[derive(Clone, Debug)]
 pub struct Logon {

@@ -2,8 +2,8 @@ use tokio::io::{AsyncReadExt, ReadHalf};
 use tokio::sync::mpsc;
 
 use crate::actors::orchestrator::OrchestratorHandle;
-use crate::builtin_messages::FixMessage;
 use crate::message::parser::Parser;
+use crate::message::FixMessage;
 
 use crate::tls_client::FixStream;
 

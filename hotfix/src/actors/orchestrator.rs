@@ -4,11 +4,12 @@ use tokio::time::{sleep, Duration, Instant};
 use tracing::debug;
 
 use crate::actors::socket_writer::WriterHandle;
-use crate::builtin_messages::{generate_message, FixMessage};
 use crate::config::SessionConfig;
+use crate::message::generate_message;
 use crate::message::heartbeat::Heartbeat;
 use crate::message::logon::Logon;
 use crate::message::parser::RawFixMessage;
+use crate::message::FixMessage;
 
 #[derive(Clone, Debug)]
 pub enum OrchestratorMessage<M> {

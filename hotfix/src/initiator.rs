@@ -1,7 +1,8 @@
-use crate::config::{Config, SessionConfig};
-use crate::message::hardcoded::FixMessage;
-use crate::session::Session;
 use futures::future::join_all;
+
+use crate::config::{Config, SessionConfig};
+use crate::message::FixMessage;
+use crate::session::Session;
 
 pub struct SocketInitiator<M> {
     sessions: Vec<Session<M>>,
