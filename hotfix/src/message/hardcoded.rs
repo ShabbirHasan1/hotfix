@@ -24,20 +24,20 @@ pub struct NewOrderSingle {
 }
 
 #[derive(Debug, Clone)]
-pub enum FixMessage {
+pub enum HardcodedFixMessage {
     NewOrderSingle(NewOrderSingle),
 }
 
-pub trait IntoRawMessage {
+pub trait FixMessage: Clone + Send + 'static {
     fn write(&self, msg: &mut EncoderHandle<Vec<u8>>);
 
     fn message_type(&self) -> &[u8];
 }
 
-impl IntoRawMessage for FixMessage {
+impl FixMessage for HardcodedFixMessage {
     fn write(&self, msg: &mut EncoderHandle<Vec<u8>>) {
         match self {
-            FixMessage::NewOrderSingle(order) => {
+            Self::NewOrderSingle(order) => {
                 // order details
                 msg.set_fv(fix44::TRANSACT_TIME, order.transact_time.clone());
                 msg.set_fv(fix44::SYMBOL, order.symbol.as_str());
@@ -57,7 +57,7 @@ impl IntoRawMessage for FixMessage {
 
     fn message_type(&self) -> &[u8] {
         match self {
-            FixMessage::NewOrderSingle(_) => b"D",
+            Self::NewOrderSingle(_) => b"D",
         }
     }
 }
@@ -66,7 +66,7 @@ pub(crate) fn generate_message(
     sender_comp_id: &str,
     target_comp_id: &str,
     msg_seq_num: usize,
-    message: impl IntoRawMessage,
+    message: impl FixMessage,
 ) -> Vec<u8> {
     let mut buffer = Vec::new();
     let mut encoder: Encoder<Config> = Encoder::default();

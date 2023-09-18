@@ -4,29 +4,28 @@ use tokio::time::{sleep, Duration, Instant};
 use tracing::debug;
 
 use crate::actors::socket_writer::WriterHandle;
-use crate::builtin_messages::generate_message;
+use crate::builtin_messages::{generate_message, FixMessage};
 use crate::config::SessionConfig;
-use crate::message::hardcoded::FixMessage;
 use crate::message::heartbeat::Heartbeat;
 use crate::message::logon::Logon;
 use crate::message::parser::RawFixMessage;
 
 #[derive(Clone, Debug)]
-pub enum OrchestratorMessage {
+pub enum OrchestratorMessage<M> {
     FixMessageReceived(RawFixMessage),
     SendHeartbeat,
     SendLogon,
-    SendMessage(FixMessage),
+    SendMessage(M),
 }
 
 #[derive(Clone)]
-pub struct OrchestratorHandle {
-    sender: mpsc::Sender<OrchestratorMessage>,
+pub struct OrchestratorHandle<M> {
+    sender: mpsc::Sender<OrchestratorMessage<M>>,
 }
 
-impl OrchestratorHandle {
+impl<M: FixMessage> OrchestratorHandle<M> {
     pub fn new(config: SessionConfig, writer: WriterHandle) -> Self {
-        let (sender, mailbox) = mpsc::channel(10);
+        let (sender, mailbox) = mpsc::channel::<OrchestratorMessage<M>>(10);
         let actor = OrchestratorActor::new(mailbox, config, writer);
         tokio::spawn(run_orchestrator(actor));
 
@@ -40,7 +39,7 @@ impl OrchestratorHandle {
             .expect("be able to receive message");
     }
 
-    pub async fn send_message(&self, msg: FixMessage) {
+    pub async fn send_message(&self, msg: M) {
         self.sender
             .send(OrchestratorMessage::SendMessage(msg))
             .await
@@ -58,19 +57,19 @@ impl HandleOutput {
     }
 }
 
-struct OrchestratorActor {
-    mailbox: mpsc::Receiver<OrchestratorMessage>,
+struct OrchestratorActor<M> {
+    mailbox: mpsc::Receiver<OrchestratorMessage<M>>,
     config: SessionConfig,
     writer: WriterHandle,
     msg_seq_number: usize,
 }
 
-impl OrchestratorActor {
+impl<M: FixMessage> OrchestratorActor<M> {
     fn new(
-        mailbox: mpsc::Receiver<OrchestratorMessage>,
+        mailbox: mpsc::Receiver<OrchestratorMessage<M>>,
         config: SessionConfig,
         writer: WriterHandle,
-    ) -> OrchestratorActor {
+    ) -> OrchestratorActor<M> {
         Self {
             mailbox,
             config,
@@ -84,7 +83,7 @@ impl OrchestratorActor {
         self.msg_seq_number
     }
 
-    async fn handle(&mut self, message: OrchestratorMessage) -> HandleOutput {
+    async fn handle(&mut self, message: OrchestratorMessage<M>) -> HandleOutput {
         match message {
             OrchestratorMessage::FixMessageReceived(fix_message) => {
                 debug!("received message: {}", fix_message);
@@ -131,7 +130,7 @@ impl OrchestratorActor {
     }
 }
 
-async fn run_orchestrator(mut actor: OrchestratorActor) {
+async fn run_orchestrator<M: FixMessage>(mut actor: OrchestratorActor<M>) {
     actor.handle(OrchestratorMessage::SendLogon).await;
     let next_heartbeat = sleep(Duration::from_secs(actor.config.heartbeat_interval));
     tokio::pin!(next_heartbeat);

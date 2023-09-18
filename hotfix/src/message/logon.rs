@@ -1,7 +1,9 @@
-use crate::builtin_messages::IntoRawMessage;
 use fefix::definitions::fix44;
 use fefix::tagvalue::{EncoderHandle, FvWrite};
 
+use crate::builtin_messages::FixMessage;
+
+#[derive(Clone, Debug)]
 pub struct Logon {
     encrypt_method: fix44::EncryptMethod,
     heartbeat_interval: u64,
@@ -18,7 +20,7 @@ impl Logon {
     }
 }
 
-impl IntoRawMessage for Logon {
+impl FixMessage for Logon {
     fn write(&self, msg: &mut EncoderHandle<Vec<u8>>) {
         msg.set_fv(fix44::ENCRYPT_METHOD, self.encrypt_method);
         msg.set_fv(fix44::HEART_BT_INT, self.heartbeat_interval);
