@@ -1,8 +1,11 @@
+use fefix::tagvalue::{Config, Decoder};
+use fefix::Dictionary;
 use tokio::select;
 use tokio::sync::mpsc;
 use tokio::time::{sleep, Duration, Instant};
 use tracing::debug;
 
+use crate::actors::application::{ApplicationHandle, ApplicationMessage};
 use crate::actors::socket_writer::WriterHandle;
 use crate::config::SessionConfig;
 use crate::message::generate_message;
@@ -25,9 +28,13 @@ pub struct OrchestratorHandle<M> {
 }
 
 impl<M: FixMessage> OrchestratorHandle<M> {
-    pub fn new(config: SessionConfig, writer: WriterHandle) -> Self {
+    pub fn new(
+        config: SessionConfig,
+        writer: WriterHandle,
+        application: ApplicationHandle<M>,
+    ) -> Self {
         let (sender, mailbox) = mpsc::channel::<OrchestratorMessage<M>>(10);
-        let actor = OrchestratorActor::new(mailbox, config, writer);
+        let actor = OrchestratorActor::new(mailbox, config, writer, application);
         tokio::spawn(run_orchestrator(actor));
 
         Self { sender }
@@ -63,6 +70,7 @@ struct OrchestratorActor<M> {
     config: SessionConfig,
     writer: WriterHandle,
     msg_seq_number: usize,
+    application: ApplicationHandle<M>,
 }
 
 impl<M: FixMessage> OrchestratorActor<M> {
@@ -70,12 +78,14 @@ impl<M: FixMessage> OrchestratorActor<M> {
         mailbox: mpsc::Receiver<OrchestratorMessage<M>>,
         config: SessionConfig,
         writer: WriterHandle,
+        application: ApplicationHandle<M>,
     ) -> OrchestratorActor<M> {
         Self {
             mailbox,
             config,
             writer,
             msg_seq_number: 0,
+            application,
         }
     }
 
@@ -84,10 +94,19 @@ impl<M: FixMessage> OrchestratorActor<M> {
         self.msg_seq_number
     }
 
+    fn decode_message(data: &[u8]) -> M {
+        let mut decoder = Decoder::<Config>::new(Dictionary::fix44());
+        let msg = decoder.decode(data).expect("decodable FIX message");
+        M::parse(msg)
+    }
+
     async fn handle(&mut self, message: OrchestratorMessage<M>) -> HandleOutput {
         match message {
             OrchestratorMessage::FixMessageReceived(fix_message) => {
                 debug!("received message: {}", fix_message);
+                let decoded_message = Self::decode_message(fix_message.as_bytes());
+                let app_message = ApplicationMessage::ReceivedMessage(decoded_message);
+                self.application.send_message(app_message).await;
             }
             OrchestratorMessage::SendHeartbeat => {
                 let seq_num = self.next_sequence_number();

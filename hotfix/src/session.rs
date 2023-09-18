@@ -1,3 +1,4 @@
+use crate::actors::application::{Application, ApplicationHandle};
 use crate::actors::orchestrator::OrchestratorHandle;
 use crate::actors::socket_reader::ReaderHandle;
 use crate::actors::socket_writer::WriterHandle;
@@ -11,9 +12,9 @@ pub struct Session<M> {
 }
 
 impl<M: FixMessage> Session<M> {
-    pub async fn new(config: SessionConfig) -> Self {
+    pub async fn new(config: SessionConfig, application: impl Application<M>) -> Self {
         let spawned_config = config.clone();
-        let connection = establish_connection(spawned_config).await;
+        let connection = establish_connection(spawned_config, application).await;
 
         Self { config, connection }
     }
@@ -34,13 +35,18 @@ struct FixConnection<M> {
     orchestrator: OrchestratorHandle<M>,
 }
 
-async fn establish_connection<M: FixMessage>(config: SessionConfig) -> FixConnection<M> {
+async fn establish_connection<M: FixMessage>(
+    config: SessionConfig,
+    application: impl Application<M>,
+) -> FixConnection<M> {
     let tls_client = Client::new(&config).await;
 
     let (reader, writer) = tls_client.split();
 
+    let application_handle = ApplicationHandle::new(application);
     let writer_handle = WriterHandle::new(writer);
-    let orchestrator_handle = OrchestratorHandle::new(config, writer_handle.clone());
+    let orchestrator_handle =
+        OrchestratorHandle::new(config, writer_handle.clone(), application_handle);
     let reader_handle = ReaderHandle::new(reader, orchestrator_handle.clone());
 
     FixConnection {

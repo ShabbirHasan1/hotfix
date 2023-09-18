@@ -2,7 +2,7 @@
 pub use fefix::definitions::fix44;
 pub use fefix::fix_values;
 use fefix::tagvalue::{Config, Encoder};
-pub use fefix::tagvalue::{EncoderHandle, FvWrite};
+pub use fefix::tagvalue::{EncoderHandle, FvWrite, Message as DecodedMessage};
 
 pub(crate) mod heartbeat;
 pub(crate) mod logon;
@@ -12,6 +12,8 @@ pub trait FixMessage: Clone + Send + 'static {
     fn write(&self, msg: &mut EncoderHandle<Vec<u8>>);
 
     fn message_type(&self) -> &[u8];
+
+    fn parse(message: DecodedMessage<&[u8]>) -> Self;
 }
 
 pub(crate) fn generate_message(
