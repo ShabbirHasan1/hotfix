@@ -5,12 +5,12 @@ use crate::config::SessionConfig;
 use crate::message::hardcoded::FixMessage;
 use crate::tls_client::Client;
 
-pub struct Session {
+pub struct Session<M> {
     pub config: SessionConfig,
-    connection: FixConnection,
+    connection: FixConnection<M>,
 }
 
-impl Session {
+impl<M: FixMessage> Session<M> {
     pub async fn new(config: SessionConfig) -> Self {
         let spawned_config = config.clone();
         let connection = establish_connection(spawned_config).await;
@@ -18,7 +18,7 @@ impl Session {
         Self { config, connection }
     }
 
-    pub async fn send_message(&self, msg: FixMessage) {
+    pub async fn send_message(&self, msg: M) {
         self.connection.orchestrator.send_message(msg).await;
     }
 
@@ -27,14 +27,14 @@ impl Session {
     }
 }
 
-struct FixConnection {
+struct FixConnection<M> {
     // we hold on to the writer and reader so they're not dropped prematurely
     _writer: WriterHandle,
     _reader: ReaderHandle,
-    orchestrator: OrchestratorHandle,
+    orchestrator: OrchestratorHandle<M>,
 }
 
-async fn establish_connection(config: SessionConfig) -> FixConnection {
+async fn establish_connection<M: FixMessage>(config: SessionConfig) -> FixConnection<M> {
     let tls_client = Client::new(&config).await;
 
     let (reader, writer) = tls_client.split();
