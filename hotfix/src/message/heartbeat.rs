@@ -1,6 +1,6 @@
 use fefix::tagvalue::EncoderHandle;
 
-use crate::message::FixMessage;
+use crate::message::{DecodedMessage, FixMessage};
 
 #[derive(Clone, Debug)]
 pub struct Heartbeat;
@@ -10,5 +10,9 @@ impl FixMessage for Heartbeat {
 
     fn message_type(&self) -> &[u8] {
         b"0"
+    }
+
+    fn parse(_message: DecodedMessage<&[u8]>) -> Self {
+        Heartbeat {}
     }
 }

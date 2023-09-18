@@ -1,7 +1,7 @@
 use fefix::definitions::fix44;
 use fefix::tagvalue::{EncoderHandle, FvWrite};
 
-use crate::message::FixMessage;
+use crate::message::{DecodedMessage, FixMessage};
 
 #[derive(Clone, Debug)]
 pub struct Logon {
@@ -29,5 +29,9 @@ impl FixMessage for Logon {
 
     fn message_type(&self) -> &[u8] {
         b"A"
+    }
+
+    fn parse(_message: DecodedMessage<&[u8]>) -> Self {
+        todo!()
     }
 }
