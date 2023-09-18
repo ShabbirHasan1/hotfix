@@ -2,7 +2,7 @@ use crate::actors::orchestrator::OrchestratorHandle;
 use crate::actors::socket_reader::ReaderHandle;
 use crate::actors::socket_writer::WriterHandle;
 use crate::config::SessionConfig;
-use crate::message::hardcoded::FixMessage;
+use crate::message::FixMessage;
 use crate::tls_client::Client;
 
 pub struct Session<M> {

@@ -1,6 +1,6 @@
 use fefix::tagvalue::EncoderHandle;
 
-use crate::builtin_messages::FixMessage;
+use crate::message::FixMessage;
 
 #[derive(Clone, Debug)]
 pub struct Heartbeat;
