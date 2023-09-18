@@ -2,7 +2,7 @@
 //! but for now we hard-code the ones we need from the
 //! FIX 4.4 spec.
 //!
-use fefix::definitions::fix44;
+pub use fefix::definitions::fix44;
 pub use fefix::fix_values::{Date, Timestamp};
 use fefix::tagvalue::{Config, Encoder, EncoderHandle, FvWrite};
 
