@@ -1,9 +1,8 @@
-use tokio::io::{AsyncWriteExt, WriteHalf};
+use tokio::io::{AsyncWrite, AsyncWriteExt, WriteHalf};
 use tokio::sync::mpsc;
 use tracing::debug;
 
 use crate::message::parser::RawFixMessage;
-use crate::tls_client::FixStream;
 
 #[derive(Clone, Debug)]
 pub enum WriterMessage {
@@ -16,7 +15,7 @@ pub struct WriterHandle {
 }
 
 impl WriterHandle {
-    pub fn new(writer: WriteHalf<FixStream>) -> Self {
+    pub fn new(writer: WriteHalf<impl AsyncWrite + Send + 'static>) -> Self {
         let (sender, mailbox) = mpsc::channel(10);
         let actor = WriterActor::new(writer, mailbox);
         tokio::spawn(run_writer(actor));
@@ -32,13 +31,13 @@ impl WriterHandle {
     }
 }
 
-struct WriterActor {
-    writer: WriteHalf<FixStream>,
+struct WriterActor<W> {
+    writer: WriteHalf<W>,
     mailbox: mpsc::Receiver<WriterMessage>,
 }
 
-impl WriterActor {
-    fn new(writer: WriteHalf<FixStream>, mailbox: mpsc::Receiver<WriterMessage>) -> Self {
+impl<W: AsyncWrite> WriterActor<W> {
+    fn new(writer: WriteHalf<W>, mailbox: mpsc::Receiver<WriterMessage>) -> Self {
         Self { writer, mailbox }
     }
 
@@ -55,7 +54,7 @@ impl WriterActor {
     }
 }
 
-async fn run_writer(mut actor: WriterActor) {
+async fn run_writer<W: AsyncWrite>(mut actor: WriterActor<W>) {
     while let Some(msg) = actor.mailbox.recv().await {
         actor.handle(msg).await;
     }

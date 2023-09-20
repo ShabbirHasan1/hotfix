@@ -1,11 +1,9 @@
-use tokio::io::{AsyncReadExt, ReadHalf};
+use tokio::io::{AsyncRead, AsyncReadExt, ReadHalf};
 use tokio::sync::mpsc;
 
 use crate::actors::orchestrator::OrchestratorHandle;
 use crate::message::parser::Parser;
 use crate::message::FixMessage;
-
-use crate::tls_client::FixStream;
 
 #[derive(Clone, Debug)]
 pub struct ReaderMessage;
@@ -19,7 +17,7 @@ pub struct ReaderHandle {
 
 impl ReaderHandle {
     pub fn new<M: FixMessage>(
-        reader: ReadHalf<FixStream>,
+        reader: ReadHalf<impl AsyncRead + Send + 'static>,
         orchestrator: OrchestratorHandle<M>,
     ) -> Self {
         let (sender, mailbox) = mpsc::channel(10);
@@ -30,16 +28,16 @@ impl ReaderHandle {
     }
 }
 
-struct ReaderActor<M> {
-    reader: ReadHalf<FixStream>,
+struct ReaderActor<M, R> {
+    reader: ReadHalf<R>,
     #[allow(dead_code)]
     mailbox: mpsc::Receiver<ReaderMessage>,
     orchestrator: OrchestratorHandle<M>,
 }
 
-impl<M> ReaderActor<M> {
+impl<M, R: AsyncRead> ReaderActor<M, R> {
     fn new(
-        reader: ReadHalf<FixStream>,
+        reader: ReadHalf<R>,
         mailbox: mpsc::Receiver<ReaderMessage>,
         orchestrator: OrchestratorHandle<M>,
     ) -> Self {
@@ -51,7 +49,11 @@ impl<M> ReaderActor<M> {
     }
 }
 
-async fn run_reader<M: FixMessage>(mut actor: ReaderActor<M>) {
+async fn run_reader<M, R>(mut actor: ReaderActor<M, R>)
+where
+    M: FixMessage,
+    R: AsyncRead,
+{
     let mut parser = Parser::default();
     loop {
         let mut buf = vec![];

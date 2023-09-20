@@ -14,21 +14,27 @@ impl Config {
     }
 }
 
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+pub struct TlsConfig {
+    pub ca_certificate_path: String,
+}
+
 #[derive(Clone, Debug, Deserialize)]
 pub struct SessionConfig {
     pub begin_string: String,
     pub sender_comp_id: String,
     pub target_comp_id: String,
     pub data_dictionary_path: String,
-    pub ca_certificate_path: String,
     pub connection_host: String,
     pub connection_port: u16,
+    #[serde(flatten)]
+    pub tls_config: Option<TlsConfig>,
     pub heartbeat_interval: u64, // in seconds
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::config::Config;
+    use crate::config::{Config, TlsConfig};
 
     #[test]
     fn test_simple_config() {
@@ -55,7 +61,10 @@ heartbeat_interval = 30
         assert_eq!(session_config.data_dictionary_path, "./spec/FIX44.xml");
         assert_eq!(session_config.connection_port, 443);
         assert_eq!(session_config.connection_host, "127.0.0.1");
-        assert_eq!(session_config.ca_certificate_path, "my_cert.crt");
         assert_eq!(session_config.heartbeat_interval, 30);
+        let expected_tls_config = TlsConfig {
+            ca_certificate_path: "my_cert.crt".to_string(),
+        };
+        assert_eq!(session_config.tls_config, Some(expected_tls_config));
     }
 }
