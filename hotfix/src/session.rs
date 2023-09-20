@@ -1,10 +1,12 @@
+use tokio::io::{AsyncRead, AsyncWrite};
+
 use crate::actors::application::{Application, ApplicationHandle};
 use crate::actors::orchestrator::OrchestratorHandle;
 use crate::actors::socket_reader::ReaderHandle;
 use crate::actors::socket_writer::WriterHandle;
 use crate::config::SessionConfig;
 use crate::message::FixMessage;
-use crate::tls_client::Client;
+use crate::transport::{create_tcp_connection, create_tcp_over_tls_connection};
 
 pub struct Session<M> {
     pub config: SessionConfig,
@@ -39,9 +41,26 @@ async fn establish_connection<M: FixMessage>(
     config: SessionConfig,
     application: impl Application<M>,
 ) -> FixConnection<M> {
-    let tls_client = Client::new(&config).await;
+    let use_tls = config.tls_config.is_some();
+    if use_tls {
+        let stream = create_tcp_over_tls_connection(&config).await;
+        _establish_connection(stream, config, application).await
+    } else {
+        let stream = create_tcp_connection(&config).await;
+        _establish_connection(stream, config, application).await
+    }
+}
 
-    let (reader, writer) = tls_client.split();
+async fn _establish_connection<M, S>(
+    stream: S,
+    config: SessionConfig,
+    application: impl Application<M>,
+) -> FixConnection<M>
+where
+    M: FixMessage,
+    S: AsyncRead + AsyncWrite + Send + 'static,
+{
+    let (reader, writer) = tokio::io::split(stream);
 
     let application_handle = ApplicationHandle::new(application);
     let writer_handle = WriterHandle::new(writer);
