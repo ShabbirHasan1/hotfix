@@ -1,7 +1,6 @@
 use redb::TableError::TableDoesNotExist;
 use redb::{Database, ReadableTable, TableDefinition};
 use std::path::Path;
-use std::ptr::write;
 
 use crate::store::MessageStore;
 
