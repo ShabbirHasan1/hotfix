@@ -1,6 +1,7 @@
 use redb::TableError::TableDoesNotExist;
 use redb::{Database, ReadableTable, TableDefinition};
 use std::path::Path;
+use std::ptr::write;
 
 use crate::store::MessageStore;
 
@@ -64,21 +65,27 @@ impl MessageStore for RedbMessageStore {
 
     async fn increment_sender_seq_number(&mut self) {
         let write_txn = self.db.begin_write().unwrap();
-        let mut table = write_txn.open_table(SEQ_NUMBER_TABLE).unwrap();
-        let current = match table.get("sender").unwrap() {
-            None => 0,
-            Some(v) => v.value(),
-        };
-        table.insert("sender", current + 1).unwrap();
+        {
+            let mut table = write_txn.open_table(SEQ_NUMBER_TABLE).unwrap();
+            let current = match table.get("sender").unwrap() {
+                None => 0,
+                Some(v) => v.value(),
+            };
+            table.insert("sender", current + 1).unwrap();
+        }
+        write_txn.commit().unwrap();
     }
 
     async fn increment_target_seq_number(&mut self) {
         let write_txn = self.db.begin_write().unwrap();
-        let mut table = write_txn.open_table(SEQ_NUMBER_TABLE).unwrap();
-        let current = match table.get("target").unwrap() {
-            None => 0,
-            Some(v) => v.value(),
-        };
-        table.insert("target", current + 1).unwrap();
+        {
+            let mut table = write_txn.open_table(SEQ_NUMBER_TABLE).unwrap();
+            let current = match table.get("target").unwrap() {
+                None => 0,
+                Some(v) => v.value(),
+            };
+            table.insert("target", current + 1).unwrap();
+        }
+        write_txn.commit().unwrap();
     }
 }

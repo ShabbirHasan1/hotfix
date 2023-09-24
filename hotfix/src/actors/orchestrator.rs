@@ -104,6 +104,7 @@ impl<M: FixMessage, S: MessageStore> OrchestratorActor<M, S> {
                 debug!("received message: {}", fix_message);
                 let decoded_message = Self::decode_message(fix_message.as_bytes());
                 let app_message = ApplicationMessage::ReceivedMessage(decoded_message);
+                self.store.increment_target_seq_number().await;
                 self.application.send_message(app_message).await;
             }
             OrchestratorMessage::SendHeartbeat => {
