@@ -15,6 +15,6 @@ jobs:
       - name: Build
         run: cargo build --verbose
       - name: Run Clippy
-        run: cargo clippy --all-targets --all-features -- -Dclippy::all
+        run: cargo clippy --all-targets --all-features -- -Dclippy::all -D warnings
       - name: Run tests
         run: cargo test --verbose

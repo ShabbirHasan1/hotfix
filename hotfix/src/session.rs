@@ -6,6 +6,7 @@ use crate::actors::socket_reader::ReaderHandle;
 use crate::actors::socket_writer::WriterHandle;
 use crate::config::SessionConfig;
 use crate::message::FixMessage;
+use crate::store::MessageStore;
 use crate::transport::{create_tcp_connection, create_tcp_over_tls_connection};
 
 pub struct Session<M> {
@@ -14,9 +15,13 @@ pub struct Session<M> {
 }
 
 impl<M: FixMessage> Session<M> {
-    pub async fn new(config: SessionConfig, application: impl Application<M>) -> Self {
+    pub async fn new(
+        config: SessionConfig,
+        application: impl Application<M>,
+        store: impl MessageStore + Send + Sync + 'static,
+    ) -> Self {
         let spawned_config = config.clone();
-        let connection = establish_connection(spawned_config, application).await;
+        let connection = establish_connection(spawned_config, application, store).await;
 
         Self { config, connection }
     }
@@ -40,32 +45,34 @@ struct FixConnection<M> {
 async fn establish_connection<M: FixMessage>(
     config: SessionConfig,
     application: impl Application<M>,
+    store: impl MessageStore + Send + Sync + 'static,
 ) -> FixConnection<M> {
     let use_tls = config.tls_config.is_some();
     if use_tls {
         let stream = create_tcp_over_tls_connection(&config).await;
-        _establish_connection(stream, config, application).await
+        _establish_connection(stream, config, application, store).await
     } else {
         let stream = create_tcp_connection(&config).await;
-        _establish_connection(stream, config, application).await
+        _establish_connection(stream, config, application, store).await
     }
 }
 
-async fn _establish_connection<M, S>(
-    stream: S,
+async fn _establish_connection<M, Stream>(
+    stream: Stream,
     config: SessionConfig,
     application: impl Application<M>,
+    store: impl MessageStore + Send + Sync + 'static,
 ) -> FixConnection<M>
 where
     M: FixMessage,
-    S: AsyncRead + AsyncWrite + Send + 'static,
+    Stream: AsyncRead + AsyncWrite + Send + 'static,
 {
     let (reader, writer) = tokio::io::split(stream);
 
     let application_handle = ApplicationHandle::new(application);
     let writer_handle = WriterHandle::new(writer);
     let orchestrator_handle =
-        OrchestratorHandle::new(config, writer_handle.clone(), application_handle);
+        OrchestratorHandle::new(config, writer_handle.clone(), application_handle, store);
     let reader_handle = ReaderHandle::new(reader, orchestrator_handle.clone());
 
     FixConnection {

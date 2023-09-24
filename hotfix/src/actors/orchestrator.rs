@@ -10,9 +10,10 @@ use crate::actors::socket_writer::WriterHandle;
 use crate::config::SessionConfig;
 use crate::message::generate_message;
 use crate::message::heartbeat::Heartbeat;
-use crate::message::logon::Logon;
+use crate::message::logon::{Logon, ResetSeqNumConfig};
 use crate::message::parser::RawFixMessage;
 use crate::message::FixMessage;
+use crate::store::MessageStore;
 
 #[derive(Clone, Debug)]
 pub enum OrchestratorMessage<M> {
@@ -32,9 +33,10 @@ impl<M: FixMessage> OrchestratorHandle<M> {
         config: SessionConfig,
         writer: WriterHandle,
         application: ApplicationHandle<M>,
+        store: impl MessageStore + Send + Sync + 'static,
     ) -> Self {
         let (sender, mailbox) = mpsc::channel::<OrchestratorMessage<M>>(10);
-        let actor = OrchestratorActor::new(mailbox, config, writer, application);
+        let actor = OrchestratorActor::new(mailbox, config, writer, application, store);
         tokio::spawn(run_orchestrator(actor));
 
         Self { sender }
@@ -65,33 +67,29 @@ impl HandleOutput {
     }
 }
 
-struct OrchestratorActor<M> {
+struct OrchestratorActor<M, S> {
     mailbox: mpsc::Receiver<OrchestratorMessage<M>>,
     config: SessionConfig,
     writer: WriterHandle,
-    msg_seq_number: usize,
     application: ApplicationHandle<M>,
+    store: S,
 }
 
-impl<M: FixMessage> OrchestratorActor<M> {
+impl<M: FixMessage, S: MessageStore> OrchestratorActor<M, S> {
     fn new(
         mailbox: mpsc::Receiver<OrchestratorMessage<M>>,
         config: SessionConfig,
         writer: WriterHandle,
         application: ApplicationHandle<M>,
-    ) -> OrchestratorActor<M> {
+        store: S,
+    ) -> OrchestratorActor<M, S> {
         Self {
             mailbox,
             config,
             writer,
-            msg_seq_number: 0,
             application,
+            store,
         }
-    }
-
-    fn next_sequence_number(&mut self) -> usize {
-        self.msg_seq_number += 1;
-        self.msg_seq_number
     }
 
     fn decode_message(data: &[u8]) -> M {
@@ -106,37 +104,49 @@ impl<M: FixMessage> OrchestratorActor<M> {
                 debug!("received message: {}", fix_message);
                 let decoded_message = Self::decode_message(fix_message.as_bytes());
                 let app_message = ApplicationMessage::ReceivedMessage(decoded_message);
+                self.store.increment_target_seq_number().await;
                 self.application.send_message(app_message).await;
             }
             OrchestratorMessage::SendHeartbeat => {
-                let seq_num = self.next_sequence_number();
+                let seq_num = self.store.next_sender_seq_number().await;
+                self.store.increment_sender_seq_number().await;
+
                 let msg = generate_message(
                     &self.config.sender_comp_id,
                     &self.config.target_comp_id,
-                    seq_num,
+                    seq_num as usize,
                     Heartbeat {},
                 );
                 self.writer.send_raw_message(RawFixMessage::new(msg)).await;
                 return HandleOutput::new(true);
             }
             OrchestratorMessage::SendLogon => {
-                let seq_num = self.next_sequence_number();
-                let logon = Logon::new(self.config.heartbeat_interval);
+                let seq_num = self.store.next_sender_seq_number().await;
+                self.store.increment_sender_seq_number().await;
+
+                let reset_config = if self.config.reset_on_logon {
+                    ResetSeqNumConfig::Reset(Some(self.store.next_target_seq_number().await))
+                } else {
+                    ResetSeqNumConfig::NoReset
+                };
+                let logon = Logon::new(self.config.heartbeat_interval, reset_config);
                 let msg = generate_message(
                     &self.config.sender_comp_id,
                     &self.config.target_comp_id,
-                    seq_num,
+                    seq_num as usize,
                     logon,
                 );
                 self.writer.send_raw_message(RawFixMessage::new(msg)).await;
                 return HandleOutput::new(true);
             }
             OrchestratorMessage::SendMessage(msg) => {
-                let seq_num = self.next_sequence_number();
+                let seq_num = self.store.next_sender_seq_number().await;
+                self.store.increment_sender_seq_number().await;
+
                 let raw_message = generate_message(
                     &self.config.sender_comp_id,
                     &self.config.target_comp_id,
-                    seq_num,
+                    seq_num as usize,
                     msg,
                 );
                 self.writer
@@ -150,7 +160,11 @@ impl<M: FixMessage> OrchestratorActor<M> {
     }
 }
 
-async fn run_orchestrator<M: FixMessage>(mut actor: OrchestratorActor<M>) {
+async fn run_orchestrator<M, S>(mut actor: OrchestratorActor<M, S>)
+where
+    M: FixMessage,
+    S: MessageStore + Send + 'static,
+{
     actor.handle(OrchestratorMessage::SendLogon).await;
     let next_heartbeat = sleep(Duration::from_secs(actor.config.heartbeat_interval));
     tokio::pin!(next_heartbeat);
