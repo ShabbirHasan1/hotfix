@@ -30,6 +30,7 @@ pub struct SessionConfig {
     #[serde(flatten)]
     pub tls_config: Option<TlsConfig>,
     pub heartbeat_interval: u64, // in seconds
+    pub reset_on_logon: bool,
 }
 
 #[cfg(test)]
@@ -49,6 +50,7 @@ connection_port = 443
 connection_host = "127.0.0.1"
 ca_certificate_path = "my_cert.crt"
 heartbeat_interval = 30
+reset_on_logon = false
         "#;
 
         let config: Config = toml::from_str(config_contents).unwrap();

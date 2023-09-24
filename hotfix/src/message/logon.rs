@@ -8,14 +8,25 @@ pub struct Logon {
     encrypt_method: fix44::EncryptMethod,
     heartbeat_interval: u64,
     reset_seq_num_flag: fix44::ResetSeqNumFlag,
+    next_expected_msg_seq_num: Option<u64>,
+}
+
+pub enum ResetSeqNumConfig {
+    Reset(Option<u64>),
+    NoReset,
 }
 
 impl Logon {
-    pub fn new(heartbeat_interval: u64) -> Self {
+    pub fn new(heartbeat_interval: u64, reset_config: ResetSeqNumConfig) -> Self {
+        let (reset_seq_num_flag, next_expected_msg_seq_num) = match reset_config {
+            ResetSeqNumConfig::Reset(next) => (fix44::ResetSeqNumFlag::Yes, next),
+            ResetSeqNumConfig::NoReset => (fix44::ResetSeqNumFlag::No, None),
+        };
         Self {
             encrypt_method: fix44::EncryptMethod::None,
             heartbeat_interval,
-            reset_seq_num_flag: fix44::ResetSeqNumFlag::Yes,
+            reset_seq_num_flag,
+            next_expected_msg_seq_num,
         }
     }
 }
@@ -25,6 +36,10 @@ impl FixMessage for Logon {
         msg.set_fv(fix44::ENCRYPT_METHOD, self.encrypt_method);
         msg.set_fv(fix44::HEART_BT_INT, self.heartbeat_interval);
         msg.set_fv(fix44::RESET_SEQ_NUM_FLAG, self.reset_seq_num_flag);
+
+        if let Some(next) = self.next_expected_msg_seq_num {
+            msg.set_fv(fix44::NEXT_EXPECTED_MSG_SEQ_NUM, next);
+        }
     }
 
     fn message_type(&self) -> &[u8] {

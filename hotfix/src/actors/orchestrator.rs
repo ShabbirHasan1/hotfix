@@ -10,7 +10,7 @@ use crate::actors::socket_writer::WriterHandle;
 use crate::config::SessionConfig;
 use crate::message::generate_message;
 use crate::message::heartbeat::Heartbeat;
-use crate::message::logon::Logon;
+use crate::message::logon::{Logon, ResetSeqNumConfig};
 use crate::message::parser::RawFixMessage;
 use crate::message::FixMessage;
 use crate::store::MessageStore;
@@ -123,7 +123,12 @@ impl<M: FixMessage, S: MessageStore> OrchestratorActor<M, S> {
                 let seq_num = self.store.next_sender_seq_number().await;
                 self.store.increment_sender_seq_number().await;
 
-                let logon = Logon::new(self.config.heartbeat_interval);
+                let reset_config = if self.config.reset_on_logon {
+                    ResetSeqNumConfig::Reset(Some(self.store.next_target_seq_number().await))
+                } else {
+                    ResetSeqNumConfig::NoReset
+                };
+                let logon = Logon::new(self.config.heartbeat_interval, reset_config);
                 let msg = generate_message(
                     &self.config.sender_comp_id,
                     &self.config.target_comp_id,

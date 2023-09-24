@@ -11,8 +11,8 @@ pub struct InMemoryMessageStore {
 
 #[async_trait::async_trait]
 impl MessageStore for InMemoryMessageStore {
-    async fn add(&mut self, sequence_number: u64, message: Vec<u8>) {
-        self.messages.insert(sequence_number, message);
+    async fn add(&mut self, sequence_number: u64, message: &[u8]) {
+        self.messages.insert(sequence_number, message.to_vec());
     }
 
     async fn next_sender_seq_number(&self) -> u64 {
