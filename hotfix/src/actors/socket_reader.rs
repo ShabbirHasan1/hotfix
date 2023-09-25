@@ -1,5 +1,6 @@
 use tokio::io::{AsyncRead, AsyncReadExt, ReadHalf};
 use tokio::sync::mpsc;
+use tracing::debug;
 
 use crate::actors::orchestrator::OrchestratorHandle;
 use crate::message::parser::Parser;
@@ -57,11 +58,27 @@ where
     let mut parser = Parser::default();
     loop {
         let mut buf = vec![];
-        actor.reader.read_buf(&mut buf).await.unwrap();
-        let messages = parser.parse(&buf);
 
-        for msg in messages {
-            actor.orchestrator.new_fix_message_received(msg).await;
+        match actor.reader.read_buf(&mut buf).await {
+            Ok(0) => {
+                actor
+                    .orchestrator
+                    .disconnect("received EOF".to_string())
+                    .await;
+                break;
+            }
+            Err(err) => {
+                actor.orchestrator.disconnect(err.to_string()).await;
+                break;
+            }
+            Ok(_) => {
+                let messages = parser.parse(&buf);
+
+                for msg in messages {
+                    actor.orchestrator.new_fix_message_received(msg).await;
+                }
+            }
         }
     }
+    debug!("reader loop is shutting down");
 }

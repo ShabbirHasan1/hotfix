@@ -4,7 +4,7 @@ use std::pin::Pin;
 use tokio::select;
 use tokio::sync::mpsc;
 use tokio::time::{sleep, Duration, Instant, Sleep};
-use tracing::debug;
+use tracing::{debug, warn};
 
 use crate::actors::application::{ApplicationHandle, ApplicationMessage};
 use crate::actors::socket_writer::WriterHandle;
@@ -22,6 +22,7 @@ pub enum OrchestratorMessage<M> {
     SendHeartbeat,
     SendLogon,
     SendMessage(M),
+    Disconnected(String),
 }
 
 #[derive(Clone)]
@@ -50,6 +51,13 @@ impl<M: FixMessage> OrchestratorHandle<M> {
             .expect("be able to receive message");
     }
 
+    pub async fn disconnect(&self, reason: String) {
+        self.sender
+            .send(OrchestratorMessage::Disconnected(reason))
+            .await
+            .expect("be able to send disconnect");
+    }
+
     pub async fn send_message(&self, msg: M) {
         self.sender
             .send(OrchestratorMessage::SendMessage(msg))
@@ -65,6 +73,7 @@ struct OrchestratorActor<M, S> {
     application: ApplicationHandle<M>,
     store: S,
     heartbeat_timer: Pin<Box<Sleep>>,
+    disconnected: bool,
 }
 
 impl<M: FixMessage, S: MessageStore> OrchestratorActor<M, S> {
@@ -83,6 +92,7 @@ impl<M: FixMessage, S: MessageStore> OrchestratorActor<M, S> {
             application,
             store,
             heartbeat_timer: Box::pin(heartbeat_timer),
+            disconnected: false,
         }
     }
 
@@ -137,6 +147,11 @@ impl<M: FixMessage, S: MessageStore> OrchestratorActor<M, S> {
             OrchestratorMessage::SendMessage(message) => {
                 self.send_message(message).await;
             }
+            OrchestratorMessage::Disconnected(reason) => {
+                warn!("disconnected from peer: {reason}");
+                self.application.send_logout(reason).await;
+                self.disconnected = true;
+            }
         }
     }
 }
@@ -149,6 +164,9 @@ where
     actor.handle(OrchestratorMessage::SendLogon).await;
 
     loop {
+        if actor.disconnected {
+            break;
+        }
         let next_message = actor.mailbox.recv();
 
         select! {
@@ -165,4 +183,6 @@ where
             }
         }
     }
+
+    debug!("orchestrator is shutting down")
 }

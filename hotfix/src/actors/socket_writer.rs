@@ -58,4 +58,6 @@ async fn run_writer<W: AsyncWrite>(mut actor: WriterActor<W>) {
     while let Some(msg) = actor.mailbox.recv().await {
         actor.handle(msg).await;
     }
+
+    debug!("writer loop is shutting down");
 }

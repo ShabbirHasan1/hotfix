@@ -6,6 +6,7 @@ use crate::message::FixMessage;
 pub trait Application<M>: Send + Sync + 'static {
     async fn on_message_from_app(&self, msg: M);
     async fn on_message_to_app(&self, msg: M);
+    async fn on_logout(&mut self, reason: &str);
 }
 
 #[derive(Debug, Clone)]
@@ -13,6 +14,7 @@ pub enum ApplicationMessage<M> {
     #[allow(dead_code)]
     SendingMessage(M),
     ReceivedMessage(M),
+    LoggedOut(String),
 }
 
 #[derive(Clone)]
@@ -35,6 +37,13 @@ impl<M: FixMessage> ApplicationHandle<M> {
             .await
             .expect("be able to send message to app");
     }
+
+    pub async fn send_logout(&self, reason: String) {
+        self.sender
+            .send(ApplicationMessage::LoggedOut(reason))
+            .await
+            .expect("be able to log out");
+    }
 }
 
 struct ApplicationActor<M, A> {
@@ -54,13 +63,16 @@ where
         }
     }
 
-    async fn handle(&self, msg: ApplicationMessage<M>) {
+    async fn handle(&mut self, msg: ApplicationMessage<M>) {
         match msg {
             ApplicationMessage::SendingMessage(m) => {
                 self.application.on_message_from_app(m).await;
             }
             ApplicationMessage::ReceivedMessage(m) => {
                 self.application.on_message_to_app(m).await;
+            }
+            ApplicationMessage::LoggedOut(reason) => {
+                self.application.on_logout(&reason).await;
             }
         }
     }
