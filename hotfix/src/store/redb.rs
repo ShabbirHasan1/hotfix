@@ -87,4 +87,16 @@ impl MessageStore for RedbMessageStore {
         }
         write_txn.commit().unwrap();
     }
+
+    async fn reset(&mut self) {
+        let write_txn = self.db.begin_write().unwrap();
+        {
+            let mut seq_no_table = write_txn.open_table(SEQ_NUMBER_TABLE).unwrap();
+            seq_no_table.insert("sender", 0).unwrap();
+            seq_no_table.insert("target", 0).unwrap();
+            let mut messages_table = write_txn.open_table(MESSAGES_TABLE).unwrap();
+            messages_table.drain::<u64>(..).unwrap();
+        }
+        write_txn.commit().unwrap();
+    }
 }

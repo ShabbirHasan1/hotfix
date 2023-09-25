@@ -9,4 +9,5 @@ pub trait MessageStore {
     async fn next_target_seq_number(&self) -> u64;
     async fn increment_sender_seq_number(&mut self);
     async fn increment_target_seq_number(&mut self);
+    async fn reset(&mut self);
 }
