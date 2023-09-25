@@ -1,8 +1,9 @@
 use fefix::tagvalue::{Config, Decoder};
 use fefix::Dictionary;
+use std::pin::Pin;
 use tokio::select;
 use tokio::sync::mpsc;
-use tokio::time::{sleep, Duration, Instant};
+use tokio::time::{sleep, Duration, Instant, Sleep};
 use tracing::debug;
 
 use crate::actors::application::{ApplicationHandle, ApplicationMessage};
@@ -57,22 +58,13 @@ impl<M: FixMessage> OrchestratorHandle<M> {
     }
 }
 
-struct HandleOutput {
-    reset_heartbeat: bool,
-}
-
-impl HandleOutput {
-    fn new(reset_heartbeat: bool) -> Self {
-        Self { reset_heartbeat }
-    }
-}
-
 struct OrchestratorActor<M, S> {
     mailbox: mpsc::Receiver<OrchestratorMessage<M>>,
     config: SessionConfig,
     writer: WriterHandle,
     application: ApplicationHandle<M>,
     store: S,
+    heartbeat_timer: Pin<Box<Sleep>>,
 }
 
 impl<M: FixMessage, S: MessageStore> OrchestratorActor<M, S> {
@@ -83,12 +75,14 @@ impl<M: FixMessage, S: MessageStore> OrchestratorActor<M, S> {
         application: ApplicationHandle<M>,
         store: S,
     ) -> OrchestratorActor<M, S> {
+        let heartbeat_timer = sleep(Duration::from_secs(config.heartbeat_interval));
         Self {
             mailbox,
             config,
             writer,
             application,
             store,
+            heartbeat_timer: Box::pin(heartbeat_timer),
         }
     }
 
@@ -98,7 +92,26 @@ impl<M: FixMessage, S: MessageStore> OrchestratorActor<M, S> {
         M::parse(msg)
     }
 
-    async fn handle(&mut self, message: OrchestratorMessage<M>) -> HandleOutput {
+    fn reset_timer(&mut self) {
+        let deadline = Instant::now() + Duration::from_secs(self.config.heartbeat_interval);
+        self.heartbeat_timer.as_mut().reset(deadline);
+    }
+
+    async fn send_message(&mut self, message: impl FixMessage) {
+        let seq_num = self.store.next_sender_seq_number().await;
+        self.store.increment_sender_seq_number().await;
+
+        let msg = generate_message(
+            &self.config.sender_comp_id,
+            &self.config.target_comp_id,
+            seq_num as usize,
+            message,
+        );
+        self.writer.send_raw_message(RawFixMessage::new(msg)).await;
+        self.reset_timer();
+    }
+
+    async fn handle(&mut self, message: OrchestratorMessage<M>) {
         match message {
             OrchestratorMessage::FixMessageReceived(fix_message) => {
                 debug!("received message: {}", fix_message);
@@ -108,59 +121,25 @@ impl<M: FixMessage, S: MessageStore> OrchestratorActor<M, S> {
                 self.application.send_message(app_message).await;
             }
             OrchestratorMessage::SendHeartbeat => {
-                let seq_num = self.store.next_sender_seq_number().await;
-                self.store.increment_sender_seq_number().await;
-
-                let msg = generate_message(
-                    &self.config.sender_comp_id,
-                    &self.config.target_comp_id,
-                    seq_num as usize,
-                    Heartbeat {},
-                );
-                self.writer.send_raw_message(RawFixMessage::new(msg)).await;
-                return HandleOutput::new(true);
+                self.send_message(Heartbeat {}).await;
             }
             OrchestratorMessage::SendLogon => {
                 if self.config.reset_on_logon {
                     self.store.reset().await;
                 }
-
-                let seq_num = self.store.next_sender_seq_number().await;
-                self.store.increment_sender_seq_number().await;
-
                 let reset_config = if self.config.reset_on_logon {
                     ResetSeqNumConfig::Reset(Some(self.store.next_target_seq_number().await))
                 } else {
                     ResetSeqNumConfig::NoReset
                 };
                 let logon = Logon::new(self.config.heartbeat_interval, reset_config);
-                let msg = generate_message(
-                    &self.config.sender_comp_id,
-                    &self.config.target_comp_id,
-                    seq_num as usize,
-                    logon,
-                );
-                self.writer.send_raw_message(RawFixMessage::new(msg)).await;
-                return HandleOutput::new(true);
-            }
-            OrchestratorMessage::SendMessage(msg) => {
-                let seq_num = self.store.next_sender_seq_number().await;
-                self.store.increment_sender_seq_number().await;
 
-                let raw_message = generate_message(
-                    &self.config.sender_comp_id,
-                    &self.config.target_comp_id,
-                    seq_num as usize,
-                    msg,
-                );
-                self.writer
-                    .send_raw_message(RawFixMessage::new(raw_message))
-                    .await;
-                return HandleOutput::new(true);
+                self.send_message(logon).await;
+            }
+            OrchestratorMessage::SendMessage(message) => {
+                self.send_message(message).await;
             }
         }
-
-        HandleOutput::new(false)
     }
 }
 
@@ -170,13 +149,11 @@ where
     S: MessageStore + Send + 'static,
 {
     actor.handle(OrchestratorMessage::SendLogon).await;
-    let next_heartbeat = sleep(Duration::from_secs(actor.config.heartbeat_interval));
-    tokio::pin!(next_heartbeat);
 
     loop {
         let next_message = actor.mailbox.recv();
 
-        let outcome = select! {
+        select! {
             next = next_message => {
                 match next {
                     Some(msg) => {
@@ -185,14 +162,9 @@ where
                     None => break,
                 }
             }
-            () = &mut next_heartbeat => {
+            () = &mut actor.heartbeat_timer.as_mut() => {
                 actor.handle(OrchestratorMessage::SendHeartbeat).await
             }
-        };
-
-        if outcome.reset_heartbeat {
-            let deadline = Instant::now() + Duration::from_secs(actor.config.heartbeat_interval);
-            next_heartbeat.as_mut().reset(deadline);
         }
     }
 }
