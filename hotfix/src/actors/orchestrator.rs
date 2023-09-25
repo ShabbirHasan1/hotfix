@@ -124,13 +124,11 @@ impl<M: FixMessage, S: MessageStore> OrchestratorActor<M, S> {
                 self.send_message(Heartbeat {}).await;
             }
             OrchestratorMessage::SendLogon => {
-                if self.config.reset_on_logon {
-                    self.store.reset().await;
-                }
                 let reset_config = if self.config.reset_on_logon {
-                    ResetSeqNumConfig::Reset(Some(self.store.next_target_seq_number().await))
+                    self.store.reset().await;
+                    ResetSeqNumConfig::Reset
                 } else {
-                    ResetSeqNumConfig::NoReset
+                    ResetSeqNumConfig::NoReset(Some(self.store.next_target_seq_number().await))
                 };
                 let logon = Logon::new(self.config.heartbeat_interval, reset_config);
 
