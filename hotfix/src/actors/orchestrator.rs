@@ -121,6 +121,10 @@ impl<M: FixMessage, S: MessageStore> OrchestratorActor<M, S> {
                 return HandleOutput::new(true);
             }
             OrchestratorMessage::SendLogon => {
+                if self.config.reset_on_logon {
+                    self.store.reset().await;
+                }
+
                 let seq_num = self.store.next_sender_seq_number().await;
                 self.store.increment_sender_seq_number().await;
 

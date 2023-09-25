@@ -30,4 +30,10 @@ impl MessageStore for InMemoryMessageStore {
     async fn increment_target_seq_number(&mut self) {
         self.target_seq_number += 1;
     }
+
+    async fn reset(&mut self) {
+        self.sender_seq_number = 0;
+        self.target_seq_number = 0;
+        self.messages.clear();
+    }
 }
