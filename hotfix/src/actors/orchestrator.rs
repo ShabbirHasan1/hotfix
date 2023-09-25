@@ -97,6 +97,20 @@ impl<M: FixMessage, S: MessageStore> OrchestratorActor<M, S> {
         self.heartbeat_timer.as_mut().reset(deadline);
     }
 
+    async fn send_message(&mut self, message: impl FixMessage) {
+        let seq_num = self.store.next_sender_seq_number().await;
+        self.store.increment_sender_seq_number().await;
+
+        let msg = generate_message(
+            &self.config.sender_comp_id,
+            &self.config.target_comp_id,
+            seq_num as usize,
+            message,
+        );
+        self.writer.send_raw_message(RawFixMessage::new(msg)).await;
+        self.reset_timer();
+    }
+
     async fn handle(&mut self, message: OrchestratorMessage<M>) {
         match message {
             OrchestratorMessage::FixMessageReceived(fix_message) => {
@@ -107,55 +121,23 @@ impl<M: FixMessage, S: MessageStore> OrchestratorActor<M, S> {
                 self.application.send_message(app_message).await;
             }
             OrchestratorMessage::SendHeartbeat => {
-                let seq_num = self.store.next_sender_seq_number().await;
-                self.store.increment_sender_seq_number().await;
-
-                let msg = generate_message(
-                    &self.config.sender_comp_id,
-                    &self.config.target_comp_id,
-                    seq_num as usize,
-                    Heartbeat {},
-                );
-                self.writer.send_raw_message(RawFixMessage::new(msg)).await;
-                self.reset_timer();
+                self.send_message(Heartbeat {}).await;
             }
             OrchestratorMessage::SendLogon => {
                 if self.config.reset_on_logon {
                     self.store.reset().await;
                 }
-
-                let seq_num = self.store.next_sender_seq_number().await;
-                self.store.increment_sender_seq_number().await;
-
                 let reset_config = if self.config.reset_on_logon {
                     ResetSeqNumConfig::Reset(Some(self.store.next_target_seq_number().await))
                 } else {
                     ResetSeqNumConfig::NoReset
                 };
                 let logon = Logon::new(self.config.heartbeat_interval, reset_config);
-                let msg = generate_message(
-                    &self.config.sender_comp_id,
-                    &self.config.target_comp_id,
-                    seq_num as usize,
-                    logon,
-                );
-                self.writer.send_raw_message(RawFixMessage::new(msg)).await;
-                self.reset_timer();
-            }
-            OrchestratorMessage::SendMessage(msg) => {
-                let seq_num = self.store.next_sender_seq_number().await;
-                self.store.increment_sender_seq_number().await;
 
-                let raw_message = generate_message(
-                    &self.config.sender_comp_id,
-                    &self.config.target_comp_id,
-                    seq_num as usize,
-                    msg,
-                );
-                self.writer
-                    .send_raw_message(RawFixMessage::new(raw_message))
-                    .await;
-                self.reset_timer();
+                self.send_message(logon).await;
+            }
+            OrchestratorMessage::SendMessage(message) => {
+                self.send_message(message).await;
             }
         }
     }
