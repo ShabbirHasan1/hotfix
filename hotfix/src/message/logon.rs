@@ -12,15 +12,15 @@ pub struct Logon {
 }
 
 pub enum ResetSeqNumConfig {
-    Reset(Option<u64>),
-    NoReset,
+    Reset,
+    NoReset(Option<u64>),
 }
 
 impl Logon {
     pub fn new(heartbeat_interval: u64, reset_config: ResetSeqNumConfig) -> Self {
         let (reset_seq_num_flag, next_expected_msg_seq_num) = match reset_config {
-            ResetSeqNumConfig::Reset(next) => (fix44::ResetSeqNumFlag::Yes, next),
-            ResetSeqNumConfig::NoReset => (fix44::ResetSeqNumFlag::No, None),
+            ResetSeqNumConfig::Reset => (fix44::ResetSeqNumFlag::Yes, None),
+            ResetSeqNumConfig::NoReset(next) => (fix44::ResetSeqNumFlag::No, next),
         };
         Self {
             encrypt_method: fix44::EncryptMethod::None,
