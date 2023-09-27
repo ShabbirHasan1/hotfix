@@ -6,8 +6,8 @@ use tokio::sync::mpsc;
 use tokio::time::{sleep, Duration, Instant, Sleep};
 use tracing::{debug, warn};
 
-use crate::actors::application::{ApplicationHandle, ApplicationMessage};
-use crate::actors::socket_writer::WriterHandle;
+use crate::actors::application::{ApplicationMessage, ApplicationRef};
+use crate::actors::socket_writer::WriterRef;
 use crate::config::SessionConfig;
 use crate::message::generate_message;
 use crate::message::heartbeat::Heartbeat;
@@ -17,7 +17,7 @@ use crate::message::FixMessage;
 use crate::store::MessageStore;
 
 #[derive(Clone, Debug)]
-pub enum OrchestratorMessage<M> {
+pub enum SessionMessage<M> {
     FixMessageReceived(RawFixMessage),
     SendHeartbeat,
     SendLogon,
@@ -26,64 +26,64 @@ pub enum OrchestratorMessage<M> {
 }
 
 #[derive(Clone)]
-pub struct OrchestratorHandle<M> {
-    sender: mpsc::Sender<OrchestratorMessage<M>>,
+pub struct SessionRef<M> {
+    sender: mpsc::Sender<SessionMessage<M>>,
 }
 
-impl<M: FixMessage> OrchestratorHandle<M> {
+impl<M: FixMessage> SessionRef<M> {
     pub fn new(
         config: SessionConfig,
-        writer: WriterHandle,
-        application: ApplicationHandle<M>,
+        writer: WriterRef,
+        application: ApplicationRef<M>,
         store: impl MessageStore + Send + Sync + 'static,
     ) -> Self {
-        let (sender, mailbox) = mpsc::channel::<OrchestratorMessage<M>>(10);
-        let actor = OrchestratorActor::new(mailbox, config, writer, application, store);
-        tokio::spawn(run_orchestrator(actor));
+        let (sender, mailbox) = mpsc::channel::<SessionMessage<M>>(10);
+        let actor = SessionActor::new(mailbox, config, writer, application, store);
+        tokio::spawn(run_session(actor));
 
         Self { sender }
     }
 
     pub async fn new_fix_message_received(&self, msg: RawFixMessage) {
         self.sender
-            .send(OrchestratorMessage::FixMessageReceived(msg))
+            .send(SessionMessage::FixMessageReceived(msg))
             .await
             .expect("be able to receive message");
     }
 
     pub async fn disconnect(&self, reason: String) {
         self.sender
-            .send(OrchestratorMessage::Disconnected(reason))
+            .send(SessionMessage::Disconnected(reason))
             .await
             .expect("be able to send disconnect");
     }
 
     pub async fn send_message(&self, msg: M) {
         self.sender
-            .send(OrchestratorMessage::SendMessage(msg))
+            .send(SessionMessage::SendMessage(msg))
             .await
             .expect("message to send successfully");
     }
 }
 
-struct OrchestratorActor<M, S> {
-    mailbox: mpsc::Receiver<OrchestratorMessage<M>>,
+struct SessionActor<M, S> {
+    mailbox: mpsc::Receiver<SessionMessage<M>>,
     config: SessionConfig,
-    writer: WriterHandle,
-    application: ApplicationHandle<M>,
+    writer: WriterRef,
+    application: ApplicationRef<M>,
     store: S,
     heartbeat_timer: Pin<Box<Sleep>>,
     disconnected: bool,
 }
 
-impl<M: FixMessage, S: MessageStore> OrchestratorActor<M, S> {
+impl<M: FixMessage, S: MessageStore> SessionActor<M, S> {
     fn new(
-        mailbox: mpsc::Receiver<OrchestratorMessage<M>>,
+        mailbox: mpsc::Receiver<SessionMessage<M>>,
         config: SessionConfig,
-        writer: WriterHandle,
-        application: ApplicationHandle<M>,
+        writer: WriterRef,
+        application: ApplicationRef<M>,
         store: S,
-    ) -> OrchestratorActor<M, S> {
+    ) -> SessionActor<M, S> {
         let heartbeat_timer = sleep(Duration::from_secs(config.heartbeat_interval));
         Self {
             mailbox,
@@ -121,19 +121,19 @@ impl<M: FixMessage, S: MessageStore> OrchestratorActor<M, S> {
         self.reset_timer();
     }
 
-    async fn handle(&mut self, message: OrchestratorMessage<M>) {
+    async fn handle(&mut self, message: SessionMessage<M>) {
         match message {
-            OrchestratorMessage::FixMessageReceived(fix_message) => {
+            SessionMessage::FixMessageReceived(fix_message) => {
                 debug!("received message: {}", fix_message);
                 let decoded_message = Self::decode_message(fix_message.as_bytes());
                 let app_message = ApplicationMessage::ReceivedMessage(decoded_message);
                 self.store.increment_target_seq_number().await;
                 self.application.send_message(app_message).await;
             }
-            OrchestratorMessage::SendHeartbeat => {
+            SessionMessage::SendHeartbeat => {
                 self.send_message(Heartbeat {}).await;
             }
-            OrchestratorMessage::SendLogon => {
+            SessionMessage::SendLogon => {
                 let reset_config = if self.config.reset_on_logon {
                     self.store.reset().await;
                     ResetSeqNumConfig::Reset
@@ -144,10 +144,10 @@ impl<M: FixMessage, S: MessageStore> OrchestratorActor<M, S> {
 
                 self.send_message(logon).await;
             }
-            OrchestratorMessage::SendMessage(message) => {
+            SessionMessage::SendMessage(message) => {
                 self.send_message(message).await;
             }
-            OrchestratorMessage::Disconnected(reason) => {
+            SessionMessage::Disconnected(reason) => {
                 warn!("disconnected from peer: {reason}");
                 self.application.send_logout(reason).await;
                 self.disconnected = true;
@@ -156,12 +156,12 @@ impl<M: FixMessage, S: MessageStore> OrchestratorActor<M, S> {
     }
 }
 
-async fn run_orchestrator<M, S>(mut actor: OrchestratorActor<M, S>)
+async fn run_session<M, S>(mut actor: SessionActor<M, S>)
 where
     M: FixMessage,
     S: MessageStore + Send + 'static,
 {
-    actor.handle(OrchestratorMessage::SendLogon).await;
+    actor.handle(SessionMessage::SendLogon).await;
 
     loop {
         if actor.disconnected {
@@ -179,10 +179,10 @@ where
                 }
             }
             () = &mut actor.heartbeat_timer.as_mut() => {
-                actor.handle(OrchestratorMessage::SendHeartbeat).await
+                actor.handle(SessionMessage::SendHeartbeat).await
             }
         }
     }
 
-    debug!("orchestrator is shutting down")
+    debug!("session is shutting down")
 }

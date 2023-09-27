@@ -1,20 +1,20 @@
 use tokio::io::{AsyncRead, AsyncWrite};
 
-use crate::actors::application::{Application, ApplicationHandle};
-use crate::actors::orchestrator::OrchestratorHandle;
-use crate::actors::socket_reader::ReaderHandle;
-use crate::actors::socket_writer::WriterHandle;
+use crate::actors::application::{Application, ApplicationRef};
+use crate::actors::session::SessionRef;
+use crate::actors::socket_reader::ReaderRef;
+use crate::actors::socket_writer::WriterRef;
 use crate::config::SessionConfig;
 use crate::message::FixMessage;
 use crate::store::MessageStore;
 use crate::transport::{create_tcp_connection, create_tcp_over_tls_connection};
 
-pub struct Session<M> {
+pub struct Initiator<M> {
     pub config: SessionConfig,
     connection: FixConnection<M>,
 }
 
-impl<M: FixMessage> Session<M> {
+impl<M: FixMessage> Initiator<M> {
     pub async fn new(
         config: SessionConfig,
         application: impl Application<M>,
@@ -37,9 +37,9 @@ impl<M: FixMessage> Session<M> {
 
 struct FixConnection<M> {
     // we hold on to the writer and reader so they're not dropped prematurely
-    _writer: WriterHandle,
-    _reader: ReaderHandle,
-    orchestrator: OrchestratorHandle<M>,
+    _writer: WriterRef,
+    _reader: ReaderRef,
+    orchestrator: SessionRef<M>,
 }
 
 async fn establish_connection<M: FixMessage>(
@@ -69,11 +69,11 @@ where
 {
     let (reader, writer) = tokio::io::split(stream);
 
-    let application_handle = ApplicationHandle::new(application);
-    let writer_handle = WriterHandle::new(writer);
+    let application_handle = ApplicationRef::new(application);
+    let writer_handle = WriterRef::new(writer);
     let orchestrator_handle =
-        OrchestratorHandle::new(config, writer_handle.clone(), application_handle, store);
-    let reader_handle = ReaderHandle::new(reader, orchestrator_handle.clone());
+        SessionRef::new(config, writer_handle.clone(), application_handle, store);
+    let reader_handle = ReaderRef::new(reader, orchestrator_handle.clone());
 
     FixConnection {
         _writer: writer_handle,

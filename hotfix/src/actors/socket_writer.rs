@@ -10,11 +10,11 @@ pub enum WriterMessage {
 }
 
 #[derive(Clone)]
-pub struct WriterHandle {
+pub struct WriterRef {
     sender: mpsc::Sender<WriterMessage>,
 }
 
-impl WriterHandle {
+impl WriterRef {
     pub fn new(writer: WriteHalf<impl AsyncWrite + Send + 'static>) -> Self {
         let (sender, mailbox) = mpsc::channel(10);
         let actor = WriterActor::new(writer, mailbox);
