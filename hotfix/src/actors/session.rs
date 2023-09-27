@@ -79,7 +79,6 @@ struct SessionActor<M, S> {
     application: ApplicationRef<M>,
     store: S,
     heartbeat_timer: Pin<Box<Sleep>>,
-    disconnected: bool,
 }
 
 impl<M: FixMessage, S: MessageStore> SessionActor<M, S> {
@@ -98,7 +97,6 @@ impl<M: FixMessage, S: MessageStore> SessionActor<M, S> {
             application,
             store,
             heartbeat_timer: Box::pin(heartbeat_timer),
-            disconnected: false,
         }
     }
 
@@ -129,9 +127,9 @@ impl<M: FixMessage, S: MessageStore> SessionActor<M, S> {
             }
             Some(ref w) => {
                 w.send_raw_message(RawFixMessage::new(msg)).await;
-                self.reset_timer();
             }
         }
+        self.reset_timer();
     }
 
     async fn send_logon(&mut self) {
@@ -164,7 +162,6 @@ impl<M: FixMessage, S: MessageStore> SessionActor<M, S> {
             SessionMessage::Disconnected(reason) => {
                 warn!("disconnected from peer: {reason}");
                 self.application.send_logout(reason).await;
-                self.disconnected = true;
             }
             SessionMessage::RegisterWriter(w) => {
                 self.writer = Some(w);
