@@ -1,5 +1,5 @@
 use tokio::io::{AsyncRead, AsyncReadExt, ReadHalf};
-use tokio::sync::mpsc;
+use tokio::sync::oneshot;
 use tracing::debug;
 
 use crate::actors::session::SessionRef;
@@ -10,42 +10,46 @@ use crate::message::FixMessage;
 pub struct ReaderMessage;
 
 pub struct ReaderRef {
-    // not sure we'll need to send messages to the reader,
-    // but we're keeping the standard actor structure for now
-    #[allow(dead_code)]
-    sender: mpsc::Sender<ReaderMessage>,
+    disconnect_signal: oneshot::Receiver<()>,
 }
 
 impl ReaderRef {
     pub fn new<M: FixMessage>(
         reader: ReadHalf<impl AsyncRead + Send + 'static>,
-        orchestrator: SessionRef<M>,
+        session_ref: SessionRef<M>,
     ) -> Self {
-        let (sender, mailbox) = mpsc::channel(10);
-        let actor = ReaderActor::new(reader, mailbox, orchestrator);
+        let (dc_sender, dc_receiver) = oneshot::channel();
+        let actor = ReaderActor::new(reader, session_ref, dc_sender);
         tokio::spawn(run_reader(actor));
 
-        Self { sender }
+        Self {
+            disconnect_signal: dc_receiver,
+        }
+    }
+
+    pub async fn wait_for_disconnect(self) {
+        self.disconnect_signal
+            .await
+            .expect("not to drop signal prematurely");
     }
 }
 
 struct ReaderActor<M, R> {
     reader: ReadHalf<R>,
-    #[allow(dead_code)]
-    mailbox: mpsc::Receiver<ReaderMessage>,
-    orchestrator: SessionRef<M>,
+    session_ref: SessionRef<M>,
+    dc_sender: oneshot::Sender<()>,
 }
 
 impl<M, R: AsyncRead> ReaderActor<M, R> {
     fn new(
         reader: ReadHalf<R>,
-        mailbox: mpsc::Receiver<ReaderMessage>,
-        orchestrator: SessionRef<M>,
+        session_ref: SessionRef<M>,
+        dc_sender: oneshot::Sender<()>,
     ) -> Self {
         Self {
             reader,
-            mailbox,
-            orchestrator,
+            session_ref,
+            dc_sender,
         }
     }
 }
@@ -62,23 +66,27 @@ where
         match actor.reader.read_buf(&mut buf).await {
             Ok(0) => {
                 actor
-                    .orchestrator
+                    .session_ref
                     .disconnect("received EOF".to_string())
                     .await;
                 break;
             }
             Err(err) => {
-                actor.orchestrator.disconnect(err.to_string()).await;
+                actor.session_ref.disconnect(err.to_string()).await;
                 break;
             }
             Ok(_) => {
                 let messages = parser.parse(&buf);
 
                 for msg in messages {
-                    actor.orchestrator.new_fix_message_received(msg).await;
+                    actor.session_ref.new_fix_message_received(msg).await;
                 }
             }
         }
     }
     debug!("reader loop is shutting down");
+    actor
+        .dc_sender
+        .send(())
+        .expect("be able to signal disconnect");
 }

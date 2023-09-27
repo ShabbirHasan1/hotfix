@@ -11,7 +11,7 @@ use crate::transport::{create_tcp_connection, create_tcp_over_tls_connection};
 
 pub struct Initiator<M> {
     pub config: SessionConfig,
-    connection: FixConnection<M>,
+    session: SessionRef<M>,
 }
 
 impl<M: FixMessage> Initiator<M> {
@@ -20,14 +20,23 @@ impl<M: FixMessage> Initiator<M> {
         application: impl Application<M>,
         store: impl MessageStore + Send + Sync + 'static,
     ) -> Self {
-        let spawned_config = config.clone();
-        let connection = establish_connection(spawned_config, application, store).await;
+        let application_ref = ApplicationRef::new(application);
+        let session_ref = SessionRef::new(config.clone(), application_ref, store);
 
-        Self { config, connection }
+        tokio::spawn({
+            let config = config.clone();
+            let session_ref = session_ref.clone();
+            establish_connection(config, session_ref)
+        });
+
+        Self {
+            config,
+            session: session_ref,
+        }
     }
 
     pub async fn send_message(&self, msg: M) {
-        self.connection.orchestrator.send_message(msg).await;
+        self.session.send_message(msg).await;
     }
 
     pub fn is_interested(&self, sender_comp_id: &str, target_comp_id: &str) -> bool {
@@ -35,49 +44,45 @@ impl<M: FixMessage> Initiator<M> {
     }
 }
 
-struct FixConnection<M> {
-    // we hold on to the writer and reader so they're not dropped prematurely
+struct FixConnection {
     _writer: WriterRef,
     _reader: ReaderRef,
-    orchestrator: SessionRef<M>,
 }
 
 async fn establish_connection<M: FixMessage>(
     config: SessionConfig,
-    application: impl Application<M>,
-    store: impl MessageStore + Send + Sync + 'static,
-) -> FixConnection<M> {
-    let use_tls = config.tls_config.is_some();
-    if use_tls {
-        let stream = create_tcp_over_tls_connection(&config).await;
-        _establish_connection(stream, config, application, store).await
-    } else {
-        let stream = create_tcp_connection(&config).await;
-        _establish_connection(stream, config, application, store).await
+    session_ref: SessionRef<M>,
+) -> FixConnection {
+    loop {
+        let use_tls = config.tls_config.is_some();
+
+        // TODO: tidy this up with the two branches having the same logic
+        if use_tls {
+            let stream = create_tcp_over_tls_connection(&config).await;
+            let conn = _create_io_refs(session_ref.clone(), stream).await;
+            session_ref.register_writer(conn._writer).await;
+            conn._reader.wait_for_disconnect().await;
+        } else {
+            let stream = create_tcp_connection(&config).await;
+            let conn = _create_io_refs(session_ref.clone(), stream).await;
+            session_ref.register_writer(conn._writer).await;
+            conn._reader.wait_for_disconnect().await;
+        }
     }
 }
 
-async fn _establish_connection<M, Stream>(
-    stream: Stream,
-    config: SessionConfig,
-    application: impl Application<M>,
-    store: impl MessageStore + Send + Sync + 'static,
-) -> FixConnection<M>
+async fn _create_io_refs<M, Stream>(session_ref: SessionRef<M>, stream: Stream) -> FixConnection
 where
     M: FixMessage,
     Stream: AsyncRead + AsyncWrite + Send + 'static,
 {
     let (reader, writer) = tokio::io::split(stream);
 
-    let application_handle = ApplicationRef::new(application);
-    let writer_handle = WriterRef::new(writer);
-    let orchestrator_handle =
-        SessionRef::new(config, writer_handle.clone(), application_handle, store);
-    let reader_handle = ReaderRef::new(reader, orchestrator_handle.clone());
+    let writer_ref = WriterRef::new(writer);
+    let reader_ref = ReaderRef::new(reader, session_ref);
 
     FixConnection {
-        _writer: writer_handle,
-        _reader: reader_handle,
-        orchestrator: orchestrator_handle,
+        _writer: writer_ref,
+        _reader: reader_ref,
     }
 }
