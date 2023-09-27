@@ -4,9 +4,10 @@ use std::pin::Pin;
 use tokio::select;
 use tokio::sync::mpsc;
 use tokio::time::{sleep, Duration, Instant, Sleep};
-use tracing::{debug, warn};
+use tracing::{debug, error, warn};
 
 use crate::actors::application::{ApplicationMessage, ApplicationRef};
+use crate::actors::session::SessionMessage::RegisterWriter;
 use crate::actors::socket_writer::WriterRef;
 use crate::config::SessionConfig;
 use crate::message::generate_message;
@@ -23,6 +24,7 @@ pub enum SessionMessage<M> {
     SendLogon,
     SendMessage(M),
     Disconnected(String),
+    RegisterWriter(WriterRef),
 }
 
 #[derive(Clone)]
@@ -33,15 +35,21 @@ pub struct SessionRef<M> {
 impl<M: FixMessage> SessionRef<M> {
     pub fn new(
         config: SessionConfig,
-        writer: WriterRef,
         application: ApplicationRef<M>,
         store: impl MessageStore + Send + Sync + 'static,
     ) -> Self {
         let (sender, mailbox) = mpsc::channel::<SessionMessage<M>>(10);
-        let actor = SessionActor::new(mailbox, config, writer, application, store);
+        let actor = SessionActor::new(mailbox, config, None, application, store);
         tokio::spawn(run_session(actor));
 
         Self { sender }
+    }
+
+    pub async fn register_writer(&self, writer: WriterRef) {
+        self.sender
+            .send(RegisterWriter(writer))
+            .await
+            .expect("be able to register writer");
     }
 
     pub async fn new_fix_message_received(&self, msg: RawFixMessage) {
@@ -69,7 +77,7 @@ impl<M: FixMessage> SessionRef<M> {
 struct SessionActor<M, S> {
     mailbox: mpsc::Receiver<SessionMessage<M>>,
     config: SessionConfig,
-    writer: WriterRef,
+    writer: Option<WriterRef>,
     application: ApplicationRef<M>,
     store: S,
     heartbeat_timer: Pin<Box<Sleep>>,
@@ -80,7 +88,7 @@ impl<M: FixMessage, S: MessageStore> SessionActor<M, S> {
     fn new(
         mailbox: mpsc::Receiver<SessionMessage<M>>,
         config: SessionConfig,
-        writer: WriterRef,
+        writer: Option<WriterRef>,
         application: ApplicationRef<M>,
         store: S,
     ) -> SessionActor<M, S> {
@@ -117,8 +125,15 @@ impl<M: FixMessage, S: MessageStore> SessionActor<M, S> {
             seq_num as usize,
             message,
         );
-        self.writer.send_raw_message(RawFixMessage::new(msg)).await;
-        self.reset_timer();
+        match self.writer {
+            None => {
+                error!("trying to write without an established connection");
+            }
+            Some(ref w) => {
+                w.send_raw_message(RawFixMessage::new(msg)).await;
+                self.reset_timer();
+            }
+        }
     }
 
     async fn handle(&mut self, message: SessionMessage<M>) {
@@ -151,6 +166,9 @@ impl<M: FixMessage, S: MessageStore> SessionActor<M, S> {
                 warn!("disconnected from peer: {reason}");
                 self.application.send_logout(reason).await;
                 self.disconnected = true;
+            }
+            RegisterWriter(w) => {
+                self.writer = Some(w);
             }
         }
     }

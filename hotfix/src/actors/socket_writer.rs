@@ -9,7 +9,7 @@ pub enum WriterMessage {
     SendMessage(RawFixMessage),
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct WriterRef {
     sender: mpsc::Sender<WriterMessage>,
 }
