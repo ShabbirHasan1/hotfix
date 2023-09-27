@@ -7,7 +7,6 @@ use tokio::time::{sleep, Duration, Instant, Sleep};
 use tracing::{debug, error, warn};
 
 use crate::actors::application::{ApplicationMessage, ApplicationRef};
-use crate::actors::session::SessionMessage::RegisterWriter;
 use crate::actors::socket_writer::WriterRef;
 use crate::config::SessionConfig;
 use crate::message::generate_message;
@@ -46,7 +45,7 @@ impl<M: FixMessage> SessionRef<M> {
 
     pub async fn register_writer(&self, writer: WriterRef) {
         self.sender
-            .send(RegisterWriter(writer))
+            .send(SessionMessage::RegisterWriter(writer))
             .await
             .expect("be able to register writer");
     }
@@ -167,7 +166,7 @@ impl<M: FixMessage, S: MessageStore> SessionActor<M, S> {
                 self.application.send_logout(reason).await;
                 self.disconnected = true;
             }
-            RegisterWriter(w) => {
+            SessionMessage::RegisterWriter(w) => {
                 self.writer = Some(w);
                 self.send_logon().await;
             }

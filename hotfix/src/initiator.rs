@@ -56,18 +56,15 @@ async fn establish_connection<M: FixMessage>(
     loop {
         let use_tls = config.tls_config.is_some();
 
-        // TODO: tidy this up with the two branches having the same logic
-        if use_tls {
+        let conn = if use_tls {
             let stream = create_tcp_over_tls_connection(&config).await;
-            let conn = _create_io_refs(session_ref.clone(), stream).await;
-            session_ref.register_writer(conn._writer).await;
-            conn._reader.wait_for_disconnect().await;
+            _create_io_refs(session_ref.clone(), stream).await
         } else {
             let stream = create_tcp_connection(&config).await;
-            let conn = _create_io_refs(session_ref.clone(), stream).await;
-            session_ref.register_writer(conn._writer).await;
-            conn._reader.wait_for_disconnect().await;
-        }
+            _create_io_refs(session_ref.clone(), stream).await
+        };
+        session_ref.register_writer(conn._writer).await;
+        conn._reader.wait_for_disconnect().await;
     }
 }
 
