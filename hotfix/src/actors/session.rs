@@ -21,7 +21,6 @@ use crate::store::MessageStore;
 pub enum SessionMessage<M> {
     FixMessageReceived(RawFixMessage),
     SendHeartbeat,
-    SendLogon,
     SendMessage(M),
     Disconnected(String),
     RegisterWriter(WriterRef),
@@ -136,6 +135,18 @@ impl<M: FixMessage, S: MessageStore> SessionActor<M, S> {
         }
     }
 
+    async fn send_logon(&mut self) {
+        let reset_config = if self.config.reset_on_logon {
+            self.store.reset().await;
+            ResetSeqNumConfig::Reset
+        } else {
+            ResetSeqNumConfig::NoReset(Some(self.store.next_target_seq_number().await))
+        };
+        let logon = Logon::new(self.config.heartbeat_interval, reset_config);
+
+        self.send_message(logon).await;
+    }
+
     async fn handle(&mut self, message: SessionMessage<M>) {
         match message {
             SessionMessage::FixMessageReceived(fix_message) => {
@@ -148,17 +159,6 @@ impl<M: FixMessage, S: MessageStore> SessionActor<M, S> {
             SessionMessage::SendHeartbeat => {
                 self.send_message(Heartbeat {}).await;
             }
-            SessionMessage::SendLogon => {
-                let reset_config = if self.config.reset_on_logon {
-                    self.store.reset().await;
-                    ResetSeqNumConfig::Reset
-                } else {
-                    ResetSeqNumConfig::NoReset(Some(self.store.next_target_seq_number().await))
-                };
-                let logon = Logon::new(self.config.heartbeat_interval, reset_config);
-
-                self.send_message(logon).await;
-            }
             SessionMessage::SendMessage(message) => {
                 self.send_message(message).await;
             }
@@ -169,6 +169,7 @@ impl<M: FixMessage, S: MessageStore> SessionActor<M, S> {
             }
             RegisterWriter(w) => {
                 self.writer = Some(w);
+                self.send_logon().await;
             }
         }
     }
@@ -179,8 +180,6 @@ where
     M: FixMessage,
     S: MessageStore + Send + 'static,
 {
-    actor.handle(SessionMessage::SendLogon).await;
-
     loop {
         if actor.disconnected {
             break;
