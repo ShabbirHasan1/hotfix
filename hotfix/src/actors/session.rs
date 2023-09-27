@@ -180,9 +180,6 @@ where
     S: MessageStore + Send + 'static,
 {
     loop {
-        if actor.disconnected {
-            break;
-        }
         let next_message = actor.mailbox.recv();
 
         select! {

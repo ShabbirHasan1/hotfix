@@ -19,6 +19,10 @@ pub struct TlsConfig {
     pub ca_certificate_path: String,
 }
 
+fn default_reconnect_interval() -> u64 {
+    30
+}
+
 #[derive(Clone, Debug, Deserialize)]
 pub struct SessionConfig {
     pub begin_string: String,
@@ -30,6 +34,8 @@ pub struct SessionConfig {
     #[serde(flatten)]
     pub tls_config: Option<TlsConfig>,
     pub heartbeat_interval: u64, // in seconds
+    #[serde(default = "default_reconnect_interval")]
+    pub reconnect_interval: u64, // in seconds
     pub reset_on_logon: bool,
 }
 
@@ -68,5 +74,6 @@ reset_on_logon = false
             ca_certificate_path: "my_cert.crt".to_string(),
         };
         assert_eq!(session_config.tls_config, Some(expected_tls_config));
+        assert_eq!(session_config.reconnect_interval, 30);
     }
 }

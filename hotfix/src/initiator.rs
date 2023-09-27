@@ -1,4 +1,7 @@
+use std::time::Duration;
 use tokio::io::{AsyncRead, AsyncWrite};
+use tokio::time::sleep;
+use tracing::warn;
 
 use crate::actors::application::{Application, ApplicationRef};
 use crate::actors::session::SessionRef;
@@ -65,6 +68,12 @@ async fn establish_connection<M: FixMessage>(
         };
         session_ref.register_writer(conn._writer).await;
         conn._reader.wait_for_disconnect().await;
+
+        let reconnect_interval = config.reconnect_interval;
+        warn!(
+            "disconnected, waiting for {reconnect_interval} seconds before attempting to reconnect"
+        );
+        sleep(Duration::from_secs(reconnect_interval)).await;
     }
 }
 
