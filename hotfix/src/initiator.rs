@@ -1,7 +1,7 @@
 use tokio::io::{AsyncRead, AsyncWrite};
 
 use crate::actors::application::{Application, ApplicationHandle};
-use crate::actors::orchestrator::OrchestratorHandle;
+use crate::actors::session::SessionHandle;
 use crate::actors::socket_reader::ReaderHandle;
 use crate::actors::socket_writer::WriterHandle;
 use crate::config::SessionConfig;
@@ -9,12 +9,12 @@ use crate::message::FixMessage;
 use crate::store::MessageStore;
 use crate::transport::{create_tcp_connection, create_tcp_over_tls_connection};
 
-pub struct Session<M> {
+pub struct Initiator<M> {
     pub config: SessionConfig,
     connection: FixConnection<M>,
 }
 
-impl<M: FixMessage> Session<M> {
+impl<M: FixMessage> Initiator<M> {
     pub async fn new(
         config: SessionConfig,
         application: impl Application<M>,
@@ -39,7 +39,7 @@ struct FixConnection<M> {
     // we hold on to the writer and reader so they're not dropped prematurely
     _writer: WriterHandle,
     _reader: ReaderHandle,
-    orchestrator: OrchestratorHandle<M>,
+    orchestrator: SessionHandle<M>,
 }
 
 async fn establish_connection<M: FixMessage>(
@@ -72,7 +72,7 @@ where
     let application_handle = ApplicationHandle::new(application);
     let writer_handle = WriterHandle::new(writer);
     let orchestrator_handle =
-        OrchestratorHandle::new(config, writer_handle.clone(), application_handle, store);
+        SessionHandle::new(config, writer_handle.clone(), application_handle, store);
     let reader_handle = ReaderHandle::new(reader, orchestrator_handle.clone());
 
     FixConnection {

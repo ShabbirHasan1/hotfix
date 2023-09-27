@@ -2,7 +2,7 @@ use tokio::io::{AsyncRead, AsyncReadExt, ReadHalf};
 use tokio::sync::mpsc;
 use tracing::debug;
 
-use crate::actors::orchestrator::OrchestratorHandle;
+use crate::actors::session::SessionHandle;
 use crate::message::parser::Parser;
 use crate::message::FixMessage;
 
@@ -19,7 +19,7 @@ pub struct ReaderHandle {
 impl ReaderHandle {
     pub fn new<M: FixMessage>(
         reader: ReadHalf<impl AsyncRead + Send + 'static>,
-        orchestrator: OrchestratorHandle<M>,
+        orchestrator: SessionHandle<M>,
     ) -> Self {
         let (sender, mailbox) = mpsc::channel(10);
         let actor = ReaderActor::new(reader, mailbox, orchestrator);
@@ -33,14 +33,14 @@ struct ReaderActor<M, R> {
     reader: ReadHalf<R>,
     #[allow(dead_code)]
     mailbox: mpsc::Receiver<ReaderMessage>,
-    orchestrator: OrchestratorHandle<M>,
+    orchestrator: SessionHandle<M>,
 }
 
 impl<M, R: AsyncRead> ReaderActor<M, R> {
     fn new(
         reader: ReadHalf<R>,
         mailbox: mpsc::Receiver<ReaderMessage>,
-        orchestrator: OrchestratorHandle<M>,
+        orchestrator: SessionHandle<M>,
     ) -> Self {
         Self {
             reader,
