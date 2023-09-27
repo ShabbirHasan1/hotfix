@@ -18,11 +18,11 @@ pub enum ApplicationMessage<M> {
 }
 
 #[derive(Clone)]
-pub struct ApplicationHandle<M> {
+pub struct ApplicationRef<M> {
     sender: mpsc::Sender<ApplicationMessage<M>>,
 }
 
-impl<M: FixMessage> ApplicationHandle<M> {
+impl<M: FixMessage> ApplicationRef<M> {
     pub fn new(application: impl Application<M>) -> Self {
         let (sender, mailbox) = mpsc::channel::<ApplicationMessage<M>>(10);
         let actor = ApplicationActor::new(mailbox, application);

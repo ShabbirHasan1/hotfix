@@ -6,8 +6,8 @@ use tokio::sync::mpsc;
 use tokio::time::{sleep, Duration, Instant, Sleep};
 use tracing::{debug, warn};
 
-use crate::actors::application::{ApplicationHandle, ApplicationMessage};
-use crate::actors::socket_writer::WriterHandle;
+use crate::actors::application::{ApplicationMessage, ApplicationRef};
+use crate::actors::socket_writer::WriterRef;
 use crate::config::SessionConfig;
 use crate::message::generate_message;
 use crate::message::heartbeat::Heartbeat;
@@ -26,15 +26,15 @@ pub enum SessionMessage<M> {
 }
 
 #[derive(Clone)]
-pub struct SessionHandle<M> {
+pub struct SessionRef<M> {
     sender: mpsc::Sender<SessionMessage<M>>,
 }
 
-impl<M: FixMessage> SessionHandle<M> {
+impl<M: FixMessage> SessionRef<M> {
     pub fn new(
         config: SessionConfig,
-        writer: WriterHandle,
-        application: ApplicationHandle<M>,
+        writer: WriterRef,
+        application: ApplicationRef<M>,
         store: impl MessageStore + Send + Sync + 'static,
     ) -> Self {
         let (sender, mailbox) = mpsc::channel::<SessionMessage<M>>(10);
@@ -69,8 +69,8 @@ impl<M: FixMessage> SessionHandle<M> {
 struct SessionActor<M, S> {
     mailbox: mpsc::Receiver<SessionMessage<M>>,
     config: SessionConfig,
-    writer: WriterHandle,
-    application: ApplicationHandle<M>,
+    writer: WriterRef,
+    application: ApplicationRef<M>,
     store: S,
     heartbeat_timer: Pin<Box<Sleep>>,
     disconnected: bool,
@@ -80,8 +80,8 @@ impl<M: FixMessage, S: MessageStore> SessionActor<M, S> {
     fn new(
         mailbox: mpsc::Receiver<SessionMessage<M>>,
         config: SessionConfig,
-        writer: WriterHandle,
-        application: ApplicationHandle<M>,
+        writer: WriterRef,
+        application: ApplicationRef<M>,
         store: S,
     ) -> SessionActor<M, S> {
         let heartbeat_timer = sleep(Duration::from_secs(config.heartbeat_interval));
