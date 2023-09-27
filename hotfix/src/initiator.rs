@@ -1,7 +1,8 @@
+use std::io;
 use std::time::Duration;
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::time::sleep;
-use tracing::warn;
+use tracing::{debug, warn};
 
 use crate::actors::application::{Application, ApplicationRef};
 use crate::actors::session::SessionRef;
@@ -57,24 +58,40 @@ async fn establish_connection<M: FixMessage>(
     session_ref: SessionRef<M>,
 ) -> FixConnection {
     loop {
-        let use_tls = config.tls_config.is_some();
+        match _create_fix_connection(&config, session_ref.clone()).await {
+            Ok(conn) => {
+                session_ref.register_writer(conn._writer).await;
+                conn._reader.wait_for_disconnect().await;
 
-        let conn = if use_tls {
-            let stream = create_tcp_over_tls_connection(&config).await;
-            _create_io_refs(session_ref.clone(), stream).await
-        } else {
-            let stream = create_tcp_connection(&config).await;
-            _create_io_refs(session_ref.clone(), stream).await
-        };
-        session_ref.register_writer(conn._writer).await;
-        conn._reader.wait_for_disconnect().await;
+                warn!("session connection dropped, attempting to reconnect");
+            }
+            Err(err) => {
+                let error_message = err.to_string();
+                warn!("failed to connect: {error_message}");
 
-        let reconnect_interval = config.reconnect_interval;
-        warn!(
-            "disconnected, waiting for {reconnect_interval} seconds before attempting to reconnect"
-        );
-        sleep(Duration::from_secs(reconnect_interval)).await;
+                let reconnect_interval = config.reconnect_interval;
+                debug!("waiting for {reconnect_interval} seconds before attempting to reconnect");
+                sleep(Duration::from_secs(reconnect_interval)).await;
+            }
+        }
     }
+}
+
+async fn _create_fix_connection<M: FixMessage>(
+    config: &SessionConfig,
+    session_ref: SessionRef<M>,
+) -> io::Result<FixConnection> {
+    let use_tls = config.tls_config.is_some();
+
+    let conn = if use_tls {
+        let stream = create_tcp_over_tls_connection(config).await?;
+        _create_io_refs(session_ref.clone(), stream).await
+    } else {
+        let stream = create_tcp_connection(config).await?;
+        _create_io_refs(session_ref.clone(), stream).await
+    };
+
+    Ok(conn)
 }
 
 async fn _create_io_refs<M, Stream>(session_ref: SessionRef<M>, stream: Stream) -> FixConnection

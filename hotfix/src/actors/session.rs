@@ -127,9 +127,9 @@ impl<M: FixMessage, S: MessageStore> SessionActor<M, S> {
             }
             Some(ref w) => {
                 w.send_raw_message(RawFixMessage::new(msg)).await;
-                self.reset_timer();
             }
         }
+        self.reset_timer();
     }
 
     async fn send_logon(&mut self) {
