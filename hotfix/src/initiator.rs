@@ -1,17 +1,13 @@
-use std::io;
 use std::time::Duration;
-use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::time::sleep;
 use tracing::{debug, warn};
 
 use crate::actors::application::{Application, ApplicationRef};
 use crate::actors::session::SessionRef;
-use crate::actors::socket_reader::ReaderRef;
-use crate::actors::socket_writer::WriterRef;
 use crate::config::SessionConfig;
 use crate::message::FixMessage;
 use crate::store::MessageStore;
-use crate::transport::{create_tcp_connection, create_tcp_over_tls_connection};
+use crate::transport::FixConnection;
 
 pub struct Initiator<M> {
     pub config: SessionConfig,
@@ -48,20 +44,15 @@ impl<M: FixMessage> Initiator<M> {
     }
 }
 
-struct FixConnection {
-    _writer: WriterRef,
-    _reader: ReaderRef,
-}
-
 async fn establish_connection<M: FixMessage>(
     config: SessionConfig,
     session_ref: SessionRef<M>,
 ) -> FixConnection {
     loop {
-        match _create_fix_connection(&config, session_ref.clone()).await {
+        match FixConnection::connect(&config, session_ref.clone()).await {
             Ok(conn) => {
-                session_ref.register_writer(conn._writer).await;
-                conn._reader.wait_for_disconnect().await;
+                session_ref.register_writer(conn.get_writer()).await;
+                conn.run_until_disconnect().await;
 
                 warn!("session connection dropped, attempting to reconnect");
             }
@@ -74,38 +65,5 @@ async fn establish_connection<M: FixMessage>(
                 sleep(Duration::from_secs(reconnect_interval)).await;
             }
         }
-    }
-}
-
-async fn _create_fix_connection<M: FixMessage>(
-    config: &SessionConfig,
-    session_ref: SessionRef<M>,
-) -> io::Result<FixConnection> {
-    let use_tls = config.tls_config.is_some();
-
-    let conn = if use_tls {
-        let stream = create_tcp_over_tls_connection(config).await?;
-        _create_io_refs(session_ref.clone(), stream).await
-    } else {
-        let stream = create_tcp_connection(config).await?;
-        _create_io_refs(session_ref.clone(), stream).await
-    };
-
-    Ok(conn)
-}
-
-async fn _create_io_refs<M, Stream>(session_ref: SessionRef<M>, stream: Stream) -> FixConnection
-where
-    M: FixMessage,
-    Stream: AsyncRead + AsyncWrite + Send + 'static,
-{
-    let (reader, writer) = tokio::io::split(stream);
-
-    let writer_ref = WriterRef::new(writer);
-    let reader_ref = ReaderRef::new(reader, session_ref);
-
-    FixConnection {
-        _writer: writer_ref,
-        _reader: reader_ref,
     }
 }
