@@ -2,9 +2,9 @@ use tokio::io::{AsyncRead, AsyncReadExt, ReadHalf};
 use tokio::sync::oneshot;
 use tracing::debug;
 
-use crate::actors::session::SessionRef;
 use crate::message::parser::Parser;
 use crate::message::FixMessage;
+use crate::session::SessionRef;
 
 #[derive(Clone, Debug)]
 pub struct ReaderMessage;
