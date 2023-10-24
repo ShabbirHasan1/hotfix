@@ -42,7 +42,7 @@ impl<M: FixMessage> ApplicationRef<M> {
         self.sender
             .send(ApplicationMessage::LoggedOut(reason))
             .await
-            .expect("be able to log out");
+            .expect("be able tell the app we have been logged out");
     }
 }
 

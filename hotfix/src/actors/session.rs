@@ -1,8 +1,8 @@
-use fefix::tagvalue::{Config, Decoder};
+use fefix::tagvalue::{Config, Decoder, FieldAccess, Message};
 use fefix::Dictionary;
 use std::pin::Pin;
 use tokio::select;
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, oneshot};
 use tokio::time::{sleep, Duration, Instant, Sleep};
 use tracing::{debug, error, warn};
 
@@ -14,15 +14,24 @@ use crate::message::heartbeat::Heartbeat;
 use crate::message::logon::{Logon, ResetSeqNumConfig};
 use crate::message::parser::RawFixMessage;
 use crate::message::FixMessage;
+use crate::session_state::SessionState;
+use crate::session_state::SessionState::{Connected, Disconnected, LoggedOut};
 use crate::store::MessageStore;
 
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub enum SessionMessage<M> {
+    /// Tell the session we have received a new FIX message from the reader.
     FixMessageReceived(RawFixMessage),
+    /// Ask the session to send a new heartbeat.
     SendHeartbeat,
+    /// Ask the session to send a message from the application.
     SendMessage(M),
+    /// Let the session know we've been disconnected.
     Disconnected(String),
+    /// Register a new writer connected to the other side.
     RegisterWriter(WriterRef),
+    /// Ask the session whether we should attempt to reconnect.
+    ShouldReconnect(oneshot::Sender<bool>),
 }
 
 #[derive(Clone)]
@@ -70,15 +79,26 @@ impl<M: FixMessage> SessionRef<M> {
             .await
             .expect("message to send successfully");
     }
+
+    pub async fn should_reconnect(&self) -> bool {
+        let (sender, receiver) = oneshot::channel();
+        self.sender
+            .send(SessionMessage::ShouldReconnect(sender))
+            .await
+            .unwrap();
+        receiver.await.expect("to receive a response")
+    }
 }
 
 struct SessionActor<M, S> {
     mailbox: mpsc::Receiver<SessionMessage<M>>,
     config: SessionConfig,
+    state: SessionState,
     writer: Option<WriterRef>,
     application: ApplicationRef<M>,
     store: S,
     heartbeat_timer: Pin<Box<Sleep>>,
+    decoder: Decoder,
 }
 
 impl<M: FixMessage, S: MessageStore> SessionActor<M, S> {
@@ -93,17 +113,82 @@ impl<M: FixMessage, S: MessageStore> SessionActor<M, S> {
         Self {
             mailbox,
             config,
+            state: Connected,
             writer,
             application,
             store,
             heartbeat_timer: Box::pin(heartbeat_timer),
+            decoder: Decoder::<Config>::new(Dictionary::fix44()),
         }
     }
 
-    fn decode_message(data: &[u8]) -> M {
-        let mut decoder = Decoder::<Config>::new(Dictionary::fix44());
-        let msg = decoder.decode(data).expect("decodable FIX message");
-        M::parse(msg)
+    fn decode_message<'a>(&'a mut self, data: &'a [u8]) -> Message<&[u8]> {
+        self.decoder.decode(data).expect("decodable FIX message")
+    }
+
+    async fn on_incoming(&mut self, message: RawFixMessage) {
+        debug!("received message: {}", message);
+        self.store.increment_target_seq_number().await;
+
+        let decoded_message = self.decode_message(message.as_bytes());
+        let message_type = decoded_message.fv_raw(&35).unwrap();
+        match message_type {
+            b"0" => {
+                // TODO: handle heartbeat
+            }
+            b"1" => {
+                // TODO: handle test request
+            }
+            b"2" => {
+                // TODO: handle resend request
+            }
+            b"3" => {
+                // TODO: handle reject
+            }
+            b"4" => {
+                // TODO: handle sequence reset
+            }
+            b"5" => {
+                self.on_logout().await;
+            }
+            b"A" => {
+                // TODO: handle logon
+            }
+            _ => {
+                let parsed_message = M::parse(decoded_message);
+                let app_message = ApplicationMessage::ReceivedMessage(parsed_message);
+                self.application.send_message(app_message).await;
+            }
+        }
+    }
+
+    async fn on_disconnect(&mut self, reason: String) {
+        match self.state {
+            Connected => {
+                self.state = Disconnected {
+                    reconnect: true,
+                    reason,
+                }
+            }
+            LoggedOut { reconnect } => {
+                self.state = Disconnected {
+                    reconnect,
+                    reason: "logged out".to_string(),
+                }
+            }
+            Disconnected { .. } => {
+                warn!("disconnect messages was received, but the session is already disconnected")
+            }
+        }
+    }
+
+    async fn on_logout(&mut self) {
+        // TODO: reconnect = false isn't always valid, this should be more sophisticated
+        self.state = LoggedOut { reconnect: false };
+        self.disconnect().await;
+        self.application
+            .send_logout("peer has logged us out".to_string())
+            .await;
     }
 
     fn reset_timer(&mut self) {
@@ -144,14 +229,16 @@ impl<M: FixMessage, S: MessageStore> SessionActor<M, S> {
         self.send_message(logon).await;
     }
 
+    async fn disconnect(&self) {
+        if let Some(writer) = &self.writer {
+            writer.disconnect().await
+        }
+    }
+
     async fn handle(&mut self, message: SessionMessage<M>) {
         match message {
             SessionMessage::FixMessageReceived(fix_message) => {
-                debug!("received message: {}", fix_message);
-                let decoded_message = Self::decode_message(fix_message.as_bytes());
-                let app_message = ApplicationMessage::ReceivedMessage(decoded_message);
-                self.store.increment_target_seq_number().await;
-                self.application.send_message(app_message).await;
+                self.on_incoming(fix_message).await;
             }
             SessionMessage::SendHeartbeat => {
                 self.send_message(Heartbeat {}).await;
@@ -160,12 +247,17 @@ impl<M: FixMessage, S: MessageStore> SessionActor<M, S> {
                 self.send_message(message).await;
             }
             SessionMessage::Disconnected(reason) => {
-                warn!("disconnected from peer: {reason}");
-                self.application.send_logout(reason).await;
+                warn!(reason, "disconnected from peer");
+                self.on_disconnect(reason).await;
             }
             SessionMessage::RegisterWriter(w) => {
                 self.writer = Some(w);
                 self.send_logon().await;
+            }
+            SessionMessage::ShouldReconnect(responder) => {
+                responder
+                    .send(self.state.should_reconnect())
+                    .expect("be able to respond");
             }
         }
     }

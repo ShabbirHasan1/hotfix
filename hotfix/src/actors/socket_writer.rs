@@ -7,6 +7,7 @@ use crate::message::parser::RawFixMessage;
 #[derive(Clone, Debug)]
 pub enum WriterMessage {
     SendMessage(RawFixMessage),
+    Disconnect,
 }
 
 #[derive(Clone, Debug)]
@@ -29,6 +30,13 @@ impl WriterRef {
             .await
             .expect("be able to send message");
     }
+
+    pub async fn disconnect(&self) {
+        self.sender
+            .send(WriterMessage::Disconnect)
+            .await
+            .expect("be able to disconnect")
+    }
 }
 
 struct WriterActor<W> {
@@ -41,7 +49,7 @@ impl<W: AsyncWrite> WriterActor<W> {
         Self { writer, mailbox }
     }
 
-    async fn handle(&mut self, message: WriterMessage) {
+    async fn handle(&mut self, message: WriterMessage) -> bool {
         match message {
             WriterMessage::SendMessage(fix_message) => {
                 self.writer
@@ -49,14 +57,18 @@ impl<W: AsyncWrite> WriterActor<W> {
                     .await
                     .expect("logon message to send");
                 debug!("sent message: {}", fix_message);
+                true
             }
+            WriterMessage::Disconnect => false,
         }
     }
 }
 
 async fn run_writer<W: AsyncWrite>(mut actor: WriterActor<W>) {
     while let Some(msg) = actor.mailbox.recv().await {
-        actor.handle(msg).await;
+        if !actor.handle(msg).await {
+            break;
+        }
     }
 
     debug!("writer loop is shutting down");
