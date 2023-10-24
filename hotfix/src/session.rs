@@ -1,3 +1,6 @@
+mod message;
+mod state;
+
 use fefix::tagvalue::{Config, Decoder, FieldAccess, Message};
 use fefix::Dictionary;
 use std::pin::Pin;
@@ -14,25 +17,11 @@ use crate::message::heartbeat::Heartbeat;
 use crate::message::logon::{Logon, ResetSeqNumConfig};
 use crate::message::parser::RawFixMessage;
 use crate::message::FixMessage;
-use crate::session_state::SessionState;
-use crate::session_state::SessionState::{Connected, Disconnected, LoggedOut};
 use crate::store::MessageStore;
 
-#[derive(Debug)]
-pub enum SessionMessage<M> {
-    /// Tell the session we have received a new FIX message from the reader.
-    FixMessageReceived(RawFixMessage),
-    /// Ask the session to send a new heartbeat.
-    SendHeartbeat,
-    /// Ask the session to send a message from the application.
-    SendMessage(M),
-    /// Let the session know we've been disconnected.
-    Disconnected(String),
-    /// Register a new writer connected to the other side.
-    RegisterWriter(WriterRef),
-    /// Ask the session whether we should attempt to reconnect.
-    ShouldReconnect(oneshot::Sender<bool>),
-}
+use message::SessionMessage;
+use state::SessionState;
+use state::SessionState::{Connected, Disconnected, LoggedOut};
 
 #[derive(Clone)]
 pub struct SessionRef<M> {
@@ -46,7 +35,7 @@ impl<M: FixMessage> SessionRef<M> {
         store: impl MessageStore + Send + Sync + 'static,
     ) -> Self {
         let (sender, mailbox) = mpsc::channel::<SessionMessage<M>>(10);
-        let actor = SessionActor::new(mailbox, config, None, application, store);
+        let actor = Session::new(mailbox, config, None, application, store);
         tokio::spawn(run_session(actor));
 
         Self { sender }
@@ -90,7 +79,7 @@ impl<M: FixMessage> SessionRef<M> {
     }
 }
 
-struct SessionActor<M, S> {
+struct Session<M, S> {
     mailbox: mpsc::Receiver<SessionMessage<M>>,
     config: SessionConfig,
     state: SessionState,
@@ -101,14 +90,14 @@ struct SessionActor<M, S> {
     decoder: Decoder,
 }
 
-impl<M: FixMessage, S: MessageStore> SessionActor<M, S> {
+impl<M: FixMessage, S: MessageStore> Session<M, S> {
     fn new(
         mailbox: mpsc::Receiver<SessionMessage<M>>,
         config: SessionConfig,
         writer: Option<WriterRef>,
         application: ApplicationRef<M>,
         store: S,
-    ) -> SessionActor<M, S> {
+    ) -> Session<M, S> {
         let heartbeat_timer = sleep(Duration::from_secs(config.heartbeat_interval));
         Self {
             mailbox,
@@ -264,7 +253,7 @@ impl<M: FixMessage, S: MessageStore> SessionActor<M, S> {
     }
 }
 
-async fn run_session<M, S>(mut actor: SessionActor<M, S>)
+async fn run_session<M, S>(mut actor: Session<M, S>)
 where
     M: FixMessage,
     S: MessageStore + Send + 'static,

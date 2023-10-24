@@ -3,9 +3,9 @@ use tokio::time::sleep;
 use tracing::{debug, warn};
 
 use crate::actors::application::{Application, ApplicationRef};
-use crate::actors::session::SessionRef;
 use crate::config::SessionConfig;
 use crate::message::FixMessage;
+use crate::session::SessionRef;
 use crate::store::MessageStore;
 use crate::transport::FixConnection;
 
