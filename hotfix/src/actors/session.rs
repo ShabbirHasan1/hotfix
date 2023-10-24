@@ -229,9 +229,10 @@ impl<M: FixMessage, S: MessageStore> SessionActor<M, S> {
         self.send_message(logon).await;
     }
 
-    async fn disconnect(&self) {
+    async fn disconnect(&mut self) {
         if let Some(writer) = &self.writer {
-            writer.disconnect().await
+            writer.disconnect().await;
+            self.writer = None;
         }
     }
 
