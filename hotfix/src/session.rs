@@ -7,7 +7,7 @@ use std::pin::Pin;
 use tokio::select;
 use tokio::sync::{mpsc, oneshot};
 use tokio::time::{sleep, Duration, Instant, Sleep};
-use tracing::{debug, error, warn};
+use tracing::{debug, warn};
 
 use crate::actors::application::{ApplicationMessage, ApplicationRef};
 use crate::actors::socket_writer::WriterRef;
@@ -21,7 +21,6 @@ use crate::store::MessageStore;
 
 use message::SessionMessage;
 use state::SessionState;
-use state::SessionState::{Connected, Disconnected, LoggedOut};
 
 #[derive(Clone)]
 pub struct SessionRef<M> {
@@ -35,7 +34,7 @@ impl<M: FixMessage> SessionRef<M> {
         store: impl MessageStore + Send + Sync + 'static,
     ) -> Self {
         let (sender, mailbox) = mpsc::channel::<SessionMessage<M>>(10);
-        let actor = Session::new(mailbox, config, None, application, store);
+        let actor = Session::new(mailbox, config, application, store);
         tokio::spawn(run_session(actor));
 
         Self { sender }
@@ -83,7 +82,6 @@ struct Session<M, S> {
     mailbox: mpsc::Receiver<SessionMessage<M>>,
     config: SessionConfig,
     state: SessionState,
-    writer: Option<WriterRef>,
     application: ApplicationRef<M>,
     store: S,
     heartbeat_timer: Pin<Box<Sleep>>,
@@ -94,7 +92,6 @@ impl<M: FixMessage, S: MessageStore> Session<M, S> {
     fn new(
         mailbox: mpsc::Receiver<SessionMessage<M>>,
         config: SessionConfig,
-        writer: Option<WriterRef>,
         application: ApplicationRef<M>,
         store: S,
     ) -> Session<M, S> {
@@ -102,8 +99,10 @@ impl<M: FixMessage, S: MessageStore> Session<M, S> {
         Self {
             mailbox,
             config,
-            state: Connected,
-            writer,
+            state: SessionState::Disconnected {
+                reconnect: true,
+                reason: "initialising".to_string(),
+            },
             application,
             store,
             heartbeat_timer: Box::pin(heartbeat_timer),
@@ -151,21 +150,26 @@ impl<M: FixMessage, S: MessageStore> Session<M, S> {
         }
     }
 
+    async fn on_connect(&mut self, writer: WriterRef) {
+        self.state = SessionState::Connected { writer };
+        self.send_logon().await;
+    }
+
     async fn on_disconnect(&mut self, reason: String) {
         match self.state {
-            Connected => {
-                self.state = Disconnected {
+            SessionState::Connected { .. } => {
+                self.state = SessionState::Disconnected {
                     reconnect: true,
                     reason,
                 }
             }
-            LoggedOut { reconnect } => {
-                self.state = Disconnected {
+            SessionState::LoggedOut { reconnect } => {
+                self.state = SessionState::Disconnected {
                     reconnect,
                     reason: "logged out".to_string(),
                 }
             }
-            Disconnected { .. } => {
+            SessionState::Disconnected { .. } => {
                 warn!("disconnect messages was received, but the session is already disconnected")
             }
         }
@@ -173,8 +177,8 @@ impl<M: FixMessage, S: MessageStore> Session<M, S> {
 
     async fn on_logout(&mut self) {
         // TODO: reconnect = false isn't always valid, this should be more sophisticated
-        self.state = LoggedOut { reconnect: false };
-        self.disconnect().await;
+        self.state.disconnect().await;
+        self.state = SessionState::LoggedOut { reconnect: false };
         self.application
             .send_logout("peer has logged us out".to_string())
             .await;
@@ -195,14 +199,7 @@ impl<M: FixMessage, S: MessageStore> Session<M, S> {
             seq_num as usize,
             message,
         );
-        match self.writer {
-            None => {
-                error!("trying to write without an established connection");
-            }
-            Some(ref w) => {
-                w.send_raw_message(RawFixMessage::new(msg)).await;
-            }
-        }
+        self.state.send_message(RawFixMessage::new(msg)).await;
         self.reset_timer();
     }
 
@@ -216,13 +213,6 @@ impl<M: FixMessage, S: MessageStore> Session<M, S> {
         let logon = Logon::new(self.config.heartbeat_interval, reset_config);
 
         self.send_message(logon).await;
-    }
-
-    async fn disconnect(&mut self) {
-        if let Some(writer) = &self.writer {
-            writer.disconnect().await;
-            self.writer = None;
-        }
     }
 
     async fn handle(&mut self, message: SessionMessage<M>) {
@@ -241,8 +231,7 @@ impl<M: FixMessage, S: MessageStore> Session<M, S> {
                 self.on_disconnect(reason).await;
             }
             SessionMessage::RegisterWriter(w) => {
-                self.writer = Some(w);
-                self.send_logon().await;
+                self.on_connect(w).await;
             }
             SessionMessage::ShouldReconnect(responder) => {
                 responder
