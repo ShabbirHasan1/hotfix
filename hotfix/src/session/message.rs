@@ -14,7 +14,7 @@ pub enum SessionMessage<M> {
     /// Let the session know we've been disconnected.
     Disconnected(String),
     /// Register a new writer connected to the other side.
-    RegisterWriter(WriterRef),
+    Connected(WriterRef),
     /// Ask the session whether we should attempt to reconnect.
     ShouldReconnect(oneshot::Sender<bool>),
 }

@@ -7,7 +7,7 @@ use std::pin::Pin;
 use tokio::select;
 use tokio::sync::{mpsc, oneshot};
 use tokio::time::{sleep, Duration, Instant, Sleep};
-use tracing::{debug, warn};
+use tracing::{debug, error, warn};
 
 use crate::actors::application::{ApplicationMessage, ApplicationRef};
 use crate::actors::socket_writer::WriterRef;
@@ -42,7 +42,7 @@ impl<M: FixMessage> SessionRef<M> {
 
     pub async fn register_writer(&self, writer: WriterRef) {
         self.sender
-            .send(SessionMessage::RegisterWriter(writer))
+            .send(SessionMessage::Connected(writer))
             .await
             .expect("be able to register writer");
     }
@@ -140,7 +140,7 @@ impl<M: FixMessage, S: MessageStore> Session<M, S> {
                 self.on_logout().await;
             }
             b"A" => {
-                // TODO: handle logon
+                self.on_logon().await;
             }
             _ => {
                 let parsed_message = M::parse(decoded_message);
@@ -151,13 +151,16 @@ impl<M: FixMessage, S: MessageStore> Session<M, S> {
     }
 
     async fn on_connect(&mut self, writer: WriterRef) {
-        self.state = SessionState::Connected { writer };
+        self.state = SessionState::AwaitingLogon {
+            writer,
+            logon_sent: false,
+        };
         self.send_logon().await;
     }
 
     async fn on_disconnect(&mut self, reason: String) {
         match self.state {
-            SessionState::Connected { .. } => {
+            SessionState::Active { .. } | SessionState::AwaitingLogon { .. } => {
                 self.state = SessionState::Disconnected {
                     reconnect: true,
                     reason,
@@ -170,8 +173,20 @@ impl<M: FixMessage, S: MessageStore> Session<M, S> {
                 }
             }
             SessionState::Disconnected { .. } => {
-                warn!("disconnect messages was received, but the session is already disconnected")
+                warn!("disconnect message was received, but the session is already disconnected")
             }
+        }
+    }
+
+    async fn on_logon(&mut self) {
+        // TODO: this should check if logon message has the right sequence numbers
+        // TODO: this should wait to see if a resend request is sent
+        if let SessionState::AwaitingLogon { writer, .. } = &self.state {
+            self.state = SessionState::Active {
+                writer: writer.clone(),
+            }
+        } else {
+            error!("received unexpected logon message");
         }
     }
 
@@ -193,13 +208,16 @@ impl<M: FixMessage, S: MessageStore> Session<M, S> {
         let seq_num = self.store.next_sender_seq_number().await;
         self.store.increment_sender_seq_number().await;
 
+        let msg_type = message.message_type().to_vec();
         let msg = generate_message(
             &self.config.sender_comp_id,
             &self.config.target_comp_id,
             seq_num as usize,
             message,
         );
-        self.state.send_message(RawFixMessage::new(msg)).await;
+        self.state
+            .send_message(&msg_type, RawFixMessage::new(msg))
+            .await;
         self.reset_timer();
     }
 
@@ -230,7 +248,7 @@ impl<M: FixMessage, S: MessageStore> Session<M, S> {
                 warn!(reason, "disconnected from peer");
                 self.on_disconnect(reason).await;
             }
-            SessionMessage::RegisterWriter(w) => {
+            SessionMessage::Connected(w) => {
                 self.on_connect(w).await;
             }
             SessionMessage::ShouldReconnect(responder) => {
