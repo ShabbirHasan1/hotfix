@@ -39,12 +39,12 @@ impl Encode for FieldMap {
 #[cfg(test)]
 mod tests {
     use crate::field_map::Field;
+    use crate::field_types::{Date, Time, Timestamp};
+    use crate::fix44;
     use crate::message::{Config, Message};
     use crate::parts::RepeatingGroup;
     use crate::Part;
     use hotfix_dictionary::{Dictionary, IsFieldDefinition};
-    use hotfix_encoding::field_types::{Date, Time, Timestamp};
-    use hotfix_encoding::fix44;
 
     #[test]
     fn encode_simple_message() {

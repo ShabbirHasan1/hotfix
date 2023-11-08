@@ -1,4 +1,4 @@
-use crate::{Buffer, FieldType};
+use crate::encoding::{Buffer, FieldType};
 use std::convert::TryInto;
 
 const LEN_IN_BYTES: usize = 3;

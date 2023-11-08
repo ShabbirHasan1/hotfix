@@ -7,10 +7,10 @@ mod trailer;
 
 use hotfix_dictionary::{IsFieldDefinition, TagU32};
 
+use crate::encoding::FieldValueError;
+use crate::{FieldType, HardCodedFixFieldDefinition};
 pub(crate) use body::Body;
 pub(crate) use header::Header;
-use hotfix_encoding::field_access::{FieldType, FieldValueError};
-use hotfix_encoding::HardCodedFixFieldDefinition;
 pub(crate) use repeating_group::RepeatingGroup;
 pub(crate) use trailer::Trailer;
 

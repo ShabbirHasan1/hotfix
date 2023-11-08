@@ -1,4 +1,4 @@
-use crate::{Buffer, FieldType};
+use crate::encoding::{Buffer, FieldType};
 use std::convert::{TryFrom, TryInto};
 
 const LEN_IN_BYTES: usize = 8;
@@ -36,7 +36,7 @@ impl Date {
     /// # Examples
     ///
     /// ```
-    /// use hotfix_encoding::field_types::Date;
+    /// use hotfix_message::field_types::Date;
     ///
     /// assert!(Date::new(2021, 4, 16).is_some());
     /// assert!(Date::new(2021, 13, 32).is_none());
@@ -66,7 +66,7 @@ impl Date {
     /// # Examples
     ///
     /// ```
-    /// use hotfix_encoding::field_types::Date;
+    /// use hotfix_message::field_types::Date;
     ///
     /// assert_eq!(&Date::new(2021, 01, 01).unwrap().to_yyyymmdd(), b"20210101");
     /// ```

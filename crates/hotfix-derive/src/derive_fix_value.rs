@@ -37,7 +37,7 @@ pub fn derive_fix_value(input: TokenStream) -> TokenStream {
         .take_enum()
         .expect("Invalid enum");
     let fefix_crate_info =
-        proc_macro_crate::crate_name("hotfix-encoding").expect("Cargo.toml hotfix issues");
+        proc_macro_crate::crate_name("hotfix-message").expect("Cargo.toml hotfix issues");
     let fefix_crate_name = match fefix_crate_info {
         proc_macro_crate::FoundCrate::Itself => Ident::new("crate", Span::call_site()),
         proc_macro_crate::FoundCrate::Name(s) => Ident::new(s.as_str(), Span::call_site()),

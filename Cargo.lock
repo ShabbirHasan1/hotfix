@@ -566,7 +566,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "hotfix-encoding"
+name = "hotfix-message"
 version = "0.0.10"
 dependencies = [
  "chrono",
@@ -589,15 +589,6 @@ dependencies = [
  "strum_macros",
  "thiserror",
  "tracing",
-]
-
-[[package]]
-name = "hotfix-message"
-version = "0.0.10"
-dependencies = [
- "hotfix-derive",
- "hotfix-dictionary",
- "hotfix-encoding",
 ]
 
 [[package]]

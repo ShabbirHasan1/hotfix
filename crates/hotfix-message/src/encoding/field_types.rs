@@ -32,8 +32,8 @@
 //! # Quick tour of [`FieldType`]
 //!
 //! ```
-//! use hotfix_encoding::field_access::FieldType;
-//! use hotfix_encoding::field_types::Timestamp;
+//! use hotfix_message::FieldType;
+//! use hotfix_message::field_types::Timestamp;
 //!
 //! let bytes = b"20130422-12:30:00.000";
 //!
@@ -87,7 +87,7 @@ pub use tz::Tz;
 pub use tz_time::TzTime;
 pub use tz_timestamp::TzTimestamp;
 
-use crate::field_access::FieldType;
+use crate::FieldType;
 
 /// Type alias for ISO 3166-1 alpha-2 strings (two-letter country codes).
 pub type Country = [u8; 2];

@@ -1,13 +1,13 @@
 use super::{Tz, ERR_TIME};
-use crate::{Buffer, FieldType};
+use crate::encoding::{Buffer, FieldType};
 
 /// Timezone-aware intra-day timestamp.
 ///
 /// # Examples
 ///
 /// ```
-/// use hotfix_encoding::field_access::FieldType;
-/// use hotfix_encoding::field_types::{Tz, TzTime};
+/// use hotfix_message::FieldType;
+/// use hotfix_message::field_types::{Tz, TzTime};
 ///
 /// let tztime = TzTime::deserialize(b"07:39:20Z").unwrap();
 /// assert_eq!(tztime.hour(), 7);
@@ -30,8 +30,8 @@ impl TzTime {
     /// # Examples
     ///
     /// ```
-    /// use hotfix_encoding::field_access::FieldType;
-    /// use hotfix_encoding::field_types::TzTime;
+    /// use hotfix_message::FieldType;
+    /// use hotfix_message::field_types::TzTime;
     ///
     /// let dtf = TzTime::deserialize(b"12:45:00Z").unwrap();
     /// assert_eq!(dtf.minute(), 45);

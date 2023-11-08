@@ -38,14 +38,14 @@ impl dict::IsFieldDefinition for HardCodedFixFieldDefinition {
 }
 
 #[cfg(feature = "fix42")]
-#[allow(dead_code, unused, warnings)]
+#[allow(dead_code, unused, warnings, enum_variant_names)]
 #[rustfmt::skip]
 /// Field and message definitions for FIX.4.4.
 pub mod fix42 {
     include!(concat!(env!("OUT_DIR"), "/fix42.rs"));
 }
 
-#[allow(dead_code, unused, warnings)]
+#[allow(dead_code, unused, warnings, enum_variant_names)]
 #[rustfmt::skip]
 /// Field and message definitions for FIX.4.4.
 pub mod fix44 {

@@ -1,7 +1,7 @@
 use std::fmt::Write;
 
 use super::{ERR_INT_INVALID, ERR_UTF8};
-use crate::{Buffer, BufferWriter, FieldType};
+use crate::encoding::{Buffer, BufferWriter, FieldType};
 use hotfix_dictionary::TagU32;
 
 impl<'a> FieldType<'a> for TagU32 {
