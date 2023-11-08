@@ -1,7 +1,7 @@
 use std::iter::FusedIterator;
 use std::ops::Range;
 
-use crate::buffer::Buffer;
+use crate::encoding::Buffer;
 
 /// Either a field that is missing or has an invalid value.
 #[derive(Debug, thiserror::Error)]

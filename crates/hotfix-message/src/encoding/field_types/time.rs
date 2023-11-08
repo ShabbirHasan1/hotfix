@@ -1,4 +1,4 @@
-use crate::{Buffer, FieldType};
+use crate::encoding::{Buffer, FieldType};
 
 const ERR_INVALID: &str = "Invalid time.";
 
@@ -62,8 +62,8 @@ impl Time {
     /// # Examples
     ///
     /// ```
-    /// use hotfix_encoding::field_access::FieldType;
-    /// use hotfix_encoding::field_types::Time;
+    /// use hotfix_message::FieldType;
+    /// use hotfix_message::field_types::Time;
     ///
     /// let dtf = Time::deserialize(b"12:45:00").unwrap();
     /// assert_eq!(dtf.hour(), 12)
@@ -77,8 +77,8 @@ impl Time {
     /// # Examples
     ///
     /// ```
-    /// use hotfix_encoding::field_access::FieldType;
-    /// use hotfix_encoding::field_types::Time;
+    /// use hotfix_message::FieldType;
+    /// use hotfix_message::field_types::Time;
     ///
     /// let dtf = Time::deserialize(b"12:45:00").unwrap();
     /// assert_eq!(dtf.minute(), 45)
@@ -92,8 +92,8 @@ impl Time {
     /// # Examples
     ///
     /// ```
-    /// use hotfix_encoding::field_access::FieldType;
-    /// use hotfix_encoding::field_types::Time;
+    /// use hotfix_message::FieldType;
+    /// use hotfix_message::field_types::Time;
     ///
     /// let dtf = Time::deserialize(b"12:45:00").unwrap();
     /// assert_eq!(dtf.minute(), 45)
@@ -102,8 +102,8 @@ impl Time {
     /// Leap second:
     ///
     /// ```
-    /// use hotfix_encoding::field_access::FieldType;
-    /// use hotfix_encoding::field_types::Time;
+    /// use hotfix_message::FieldType;
+    /// use hotfix_message::field_types::Time;
     ///
     /// let dtf = Time::deserialize(b"23:59:60").unwrap();
     /// assert_eq!(dtf.second(), 60)
@@ -117,8 +117,8 @@ impl Time {
     /// # Examples
     ///
     /// ```
-    /// use hotfix_encoding::field_access::FieldType;
-    /// use hotfix_encoding::field_types::Time;
+    /// use hotfix_message::FieldType;
+    /// use hotfix_message::field_types::Time;
     ///
     /// let dtf = Time::deserialize(b"12:45:00.328").unwrap();
     /// assert_eq!(dtf.milli(), 328)

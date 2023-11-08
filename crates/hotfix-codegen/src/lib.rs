@@ -219,8 +219,7 @@ pub fn gen_definitions(fix_dictionary: &dict::Dictionary, settings: &Settings) -
 
             use {fefix_path}::dict::FieldLocation;
             use {fefix_path}::dict::FixDatatype;
-            use {fefix_path}::definitions::HardCodedFixFieldDefinition;
-            use {fefix_path}::FieldType;
+            use {fefix_path}::{{FieldType, HardCodedFixFieldDefinition}};
 
             {enum_definitions}
 

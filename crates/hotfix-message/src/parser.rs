@@ -217,11 +217,10 @@ fn tag_from_bytes(bytes: &[u8]) -> Option<TagU32> {
 
 #[cfg(test)]
 mod tests {
+    use crate::field_types::Currency;
     use crate::message::{Config, Message};
-    use crate::Part;
+    use crate::{fix44, Part};
     use hotfix_dictionary::{Dictionary, IsFieldDefinition};
-    use hotfix_encoding::field_types::Currency;
-    use hotfix_encoding::fix44;
 
     #[test]
     fn parse_simple_message() {

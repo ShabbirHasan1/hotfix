@@ -1,5 +1,5 @@
 use super::{Timestamp, Tz};
-use crate::{Buffer, FieldType};
+use crate::encoding::{Buffer, FieldType};
 
 /// A time and date combination representing local time with an offset from UTC.
 #[derive(Debug, Clone, PartialEq, Eq)]

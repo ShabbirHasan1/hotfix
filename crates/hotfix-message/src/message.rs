@@ -4,9 +4,9 @@ use crate::encoder::Encode;
 use crate::field_map::{Field, FieldMap};
 use crate::parser::{MessageParser, SOH};
 use crate::parts::{Body, Header, Part, RepeatingGroup, Trailer};
+use crate::FieldType;
+use crate::{fix44, HardCodedFixFieldDefinition};
 use hotfix_dictionary::{Dictionary, FieldLocation, IsFieldDefinition, TagU32};
-use hotfix_encoding::field_access::FieldType;
-use hotfix_encoding::{fix44, HardCodedFixFieldDefinition};
 
 pub struct Message {
     pub(crate) header: Header,

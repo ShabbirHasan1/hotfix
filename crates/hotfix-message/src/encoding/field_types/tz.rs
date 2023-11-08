@@ -1,4 +1,4 @@
-use crate::{Buffer, FieldType};
+use crate::encoding::{Buffer, FieldType};
 use std::hash::Hash;
 use std::time::Duration;
 
@@ -12,8 +12,8 @@ const MINUTE: u32 = 60;
 /// # Examples
 ///
 /// ```
-/// use hotfix_encoding::field_access::FieldType;
-/// use hotfix_encoding::field_types::Tz;
+/// use hotfix_message::FieldType;
+/// use hotfix_message::field_types::Tz;
 /// use std::time::Duration;
 ///
 /// let timezone = Tz::deserialize(b"Z").unwrap();

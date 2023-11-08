@@ -1,6 +1,6 @@
+use crate::FieldType;
 use crate::Part;
 use hotfix_dictionary::TagU32;
-use hotfix_encoding::field_access::FieldType;
 use std::collections::BTreeMap;
 
 use crate::parts::RepeatingGroup;
